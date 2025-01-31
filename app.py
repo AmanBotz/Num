@@ -1,5 +1,7 @@
+from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
+from threading import Thread
 import os
 import time
 
@@ -16,6 +18,13 @@ caption_format = "{numbering}. {original_caption}"
 
 # Initialize Pyrogram Bot
 app_bot = Client("renamer_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
+
+# Flask app for health check
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def health_check():
+    return "Bot is running", 200
 
 @app_bot.on_message(filters.command("set_caption") & filters.private)
 async def set_caption(client, message):
@@ -74,4 +83,9 @@ async def start(client, message):
     )
 
 if __name__ == "__main__":
+    # Start Flask health check server on dynamic port
+    flask_port = int(os.getenv("PORT", "8000"))
+    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=flask_port)).start()
+
+    # Start Pyrogram bot
     app_bot.run()
