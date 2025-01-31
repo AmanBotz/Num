@@ -35,8 +35,7 @@ async def reset(_, message: Message):
 
 @app.on_message(
     filters.channel & 
-    (filters.document | filters.photo | filters.video | filters.audio) &
-    ~filters.edited
+    (filters.document | filters.photo | filters.video | filters.audio)
 )
 async def handle_file(_, message: Message):
     chat_id = message.chat.id
