@@ -1,6 +1,8 @@
 from flask import Flask
 from pyrogram import Client, filters
+from pyrogram.errors import FloodWait
 import os
+import time
 
 # Bot Configuration
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -38,38 +40,44 @@ async def reset_counter(client, message):
     counter = 1
     await message.reply_text("Counter has been reset to 1.")
 
-@app_bot.on_message(filters.document | filters.video | filters.audio & filters.private)
-async def rename_caption(client, message):
+@app_bot.on_message(filters.command("start_numbering") & filters.channel)
+async def start_numbering(client, message):
     global counter, caption_format
 
-    # Get the original caption
-    original_caption = message.caption or "No Caption"
+    # Ensure the bot is an admin in the channel
+    chat_id = message.chat.id
+    try:
+        async for msg in client.get_chat_history(chat_id, reverse=True):  # Get all messages in the channel
+            if msg.document or msg.video or msg.audio:  # Check if the message contains a file
+                original_caption = msg.caption or "No Caption"
 
-    # Format numbering as 3 digits (e.g., 001, 002, etc.)
-    formatted_number = f"{counter:03}"
+                # Format numbering as 3 digits
+                formatted_number = f"{counter:03}"
 
-    # Generate the new caption
-    new_caption = caption_format.replace("{numbering}", f"{formatted_number}).").replace("{original_caption}", original_caption)
+                # Generate the new caption
+                new_caption = caption_format.replace("{numbering}", f"{formatted_number}).").replace("{original_caption}", original_caption)
 
-    # Send the file back with the new caption
-    if message.document:
-        await client.send_document(message.chat.id, message.document.file_id, caption=new_caption)
-    elif message.video:
-        await client.send_video(message.chat.id, message.video.file_id, caption=new_caption)
-    elif message.audio:
-        await client.send_audio(message.chat.id, message.audio.file_id, caption=new_caption)
+                # Edit the message with the new caption
+                try:
+                    await client.edit_message_caption(chat_id, msg.id, caption=new_caption)
+                    counter += 1
+                    time.sleep(1)  # Avoid hitting Telegram's rate limits
+                except FloodWait as e:
+                    time.sleep(e.x)
+    except Exception as e:
+        await message.reply_text(f"An error occurred: {str(e)}")
+        return
 
-    # Increment the counter
-    counter += 1
+    await message.reply_text("Numbering completed for all files in the channel.")
 
 @app_bot.on_message(filters.command("start") & filters.private)
 async def start(client, message):
     await message.reply_text(
-        "Hello! Send me a file, and I'll add numbering to its caption.\n\n"
+        "Hello! Here's how you can use me:\n\n"
         "Commands:\n"
         "`/set_caption {numbering}. Your custom text` - Set custom caption format.\n"
-        "`/reset` - Reset the counter to 1.\n\n"
-        "Use `{numbering}` for the counter and `{original_caption}` for the file's original caption."
+        "`/reset` - Reset the counter to 1.\n"
+        "`/start_numbering` - Add numbering to all files in the channel."
     )
 
 if __name__ == "__main__":
