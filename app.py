@@ -1,8 +1,8 @@
 from flask import Flask
 from pyrogram import Client, filters
+import os
 
 # Bot Configuration
-import os
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 API_ID = os.getenv("API_ID")
 API_HASH = os.getenv("API_HASH")
@@ -32,6 +32,12 @@ async def set_caption(client, message):
     else:
         await message.reply_text("Usage: `/set_caption {numbering}. Your custom text`")
 
+@app_bot.on_message(filters.command("reset") & filters.private)
+async def reset_counter(client, message):
+    global counter
+    counter = 1
+    await message.reply_text("Counter has been reset to 1.")
+
 @app_bot.on_message(filters.document | filters.video | filters.audio & filters.private)
 async def rename_caption(client, message):
     global counter, caption_format
@@ -39,8 +45,11 @@ async def rename_caption(client, message):
     # Get the original caption
     original_caption = message.caption or "No Caption"
 
+    # Format numbering as 3 digits (e.g., 001, 002, etc.)
+    formatted_number = f"{counter:03}"
+
     # Generate the new caption
-    new_caption = caption_format.replace("{numbering}", str(counter)).replace("{original_caption}", original_caption)
+    new_caption = caption_format.replace("{numbering}", f"{formatted_number}).").replace("{original_caption}", original_caption)
 
     # Send the file back with the new caption
     if message.document:
@@ -57,7 +66,9 @@ async def rename_caption(client, message):
 async def start(client, message):
     await message.reply_text(
         "Hello! Send me a file, and I'll add numbering to its caption.\n\n"
-        "To set a custom caption format, use `/set_caption {numbering}. Your custom text`.\n"
+        "Commands:\n"
+        "`/set_caption {numbering}. Your custom text` - Set custom caption format.\n"
+        "`/reset` - Reset the counter to 1.\n\n"
         "Use `{numbering}` for the counter and `{original_caption}` for the file's original caption."
     )
 
