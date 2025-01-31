@@ -1,4 +1,3 @@
-from flask import Flask
 from pyrogram import Client, filters
 from pyrogram.errors import FloodWait
 import os
@@ -17,13 +16,6 @@ caption_format = "{numbering}. {original_caption}"
 
 # Initialize Pyrogram Bot
 app_bot = Client("renamer_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-# Health check endpoint
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def health_check():
-    return "Bot is running", 200
 
 @app_bot.on_message(filters.command("set_caption") & filters.private)
 async def set_caption(client, message):
@@ -44,10 +36,10 @@ async def reset_counter(client, message):
 async def start_numbering(client, message):
     global counter, caption_format
 
-    # Ensure the bot is an admin in the channel
     chat_id = message.chat.id
     try:
-        async for msg in client.get_chat_history(chat_id, reverse=True):  # Get all messages in the channel
+        # Process messages in reverse (oldest to newest)
+        async for msg in client.get_chat_history(chat_id, reverse=True):  # Iterate from oldest to newest
             if msg.document or msg.video or msg.audio:  # Check if the message contains a file
                 original_caption = msg.caption or "No Caption"
 
@@ -64,6 +56,7 @@ async def start_numbering(client, message):
                     time.sleep(1)  # Avoid hitting Telegram's rate limits
                 except FloodWait as e:
                     time.sleep(e.x)
+
     except Exception as e:
         await message.reply_text(f"An error occurred: {str(e)}")
         return
@@ -81,7 +74,4 @@ async def start(client, message):
     )
 
 if __name__ == "__main__":
-    # Run Flask health check and Pyrogram in parallel
-    from threading import Thread
-    Thread(target=lambda: flask_app.run(host="0.0.0.0", port=8000)).start()
     app_bot.run()
