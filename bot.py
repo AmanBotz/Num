@@ -3,6 +3,9 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 from aiohttp import web
 
+# Add API credentials for Pyrofork
+API_ID = int(os.getenv("API_ID", 12345))  # Get from https://my.telegram.org
+API_HASH = os.getenv("API_HASH", "your_api_hash_here")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8000))
 
@@ -11,7 +14,14 @@ file_counts = {}
 async def health_check(request):
     return web.Response(text="OK")
 
-app = Client("caption_bot", bot_token=BOT_TOKEN)
+# Initialize client with API credentials + in_memory session
+app = Client(
+    name="caption_bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    in_memory=True  # Required for ephemeral environments like Koyeb
+)
 
 @app.on_message(filters.command("start"))
 async def start(client: Client, message: Message):
