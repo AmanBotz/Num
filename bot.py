@@ -1,40 +1,66 @@
 import os
-from pyrogram import Client, filters
-from flask import Flask
-
-# Ensure you have these environment variables set
-API_ID = int(os.getenv("API_ID"))  # Convert to integer
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-# Debugging: Print the values (remove this in production)
-print(f"API_ID: {API_ID}, API_HASH: {API_HASH}, BOT_TOKEN: {BOT_TOKEN}")
+from flask import Flask, request, jsonify
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 app = Flask(__name__)
 
-bot = Client("my_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
+# Global counter for numbering
+numbering_counter = {"count": 1}
 
-@bot.on_message(filters.channel & filters.document)
-async def update_caption(client, message):
-    current_caption = message.caption or ""
-    
-    if current_caption:
-        parts = current_caption.split(' ')
-        if parts and parts[0].isdigit():
-            number = int(parts[0]) + 1
-        else:
-            number = 1
-    else:
-        number = 1
+# Telegram bot commands
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello! Send me a file, and I'll add numbered captions to it.")
 
-    new_caption = f"{number:03d} {current_caption}"
-    
-    await message.edit_caption(new_caption)
+async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    numbering_counter["count"] = 1
+    await update.message.reply_text("Numbering reset!")
 
-@app.route('/health', methods=['GET'])
+async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global numbering_counter
+    file = update.message.document or update.message.photo[-1]
+    caption = update.message.caption or "No caption provided"
+    number = f"{numbering_counter['count']:03d})"
+    new_caption = f"{number} {caption}"
+    numbering_counter["count"] += 1
+
+    await update.message.reply_document(file, caption=new_caption)
+
+# Flask endpoint for Telegram webhook
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
+    update = Update.de_json(data, app.bot.bot)
+    app.bot.process_update(update)
+    return jsonify({"status": "ok"}), 200
+
+# Health check route for Koyeb
+@app.route("/health", methods=["GET"])
 def health_check():
-    return "OK", 200
+    return jsonify({"status": "healthy"}), 200
+
+# Main function
+def main():
+    global app
+
+    # Load bot token and webhook URL from environment variables
+    bot_token = os.getenv("BOT_TOKEN")
+    webhook_url = os.getenv("WEBHOOK_URL")
+
+    if not bot_token or not webhook_url:
+        raise EnvironmentError("BOT_TOKEN and WEBHOOK_URL must be set in the environment variables!")
+
+    # Telegram bot application
+    app.bot = Application.builder().token(bot_token).build()
+    app.bot.add_handler(CommandHandler("start", start))
+    app.bot.add_handler(CommandHandler("reset", reset))
+    app.bot.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
+
+    # Set webhook
+    app.bot.bot.set_webhook(url=webhook_url)
+
+    # Start Flask server
+    app.run(host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
-    bot.start()
-    app.run(host='0.0.0.0', port=8000)
+    main()
