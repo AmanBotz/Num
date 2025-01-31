@@ -46,9 +46,18 @@ async def start_numbering(client, message):
     global counter, caption_format
 
     chat_id = message.chat.id
+    all_messages = []  # To store all messages
+
     try:
-        # Process messages in reverse (oldest to newest)
-        async for msg in client.get_chat_history(chat_id, reverse=True):  # Iterate from oldest to newest
+        # Fetch all messages and store them in a list
+        async for msg in client.get_chat_history(chat_id, limit=200):
+            all_messages.append(msg)
+
+        # Reverse the list to process from oldest to newest
+        all_messages.reverse()
+
+        # Iterate through messages and edit captions
+        for msg in all_messages:
             if msg.document or msg.video or msg.audio:  # Check if the message contains a file
                 original_caption = msg.caption or "No Caption"
 
