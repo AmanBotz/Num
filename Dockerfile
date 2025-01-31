@@ -1,17 +1,10 @@
-# Use Python base image
-FROM python:3.9
+FROM python:3.9-slim
 
-# Set the working directory
 WORKDIR /app
+COPY . .
 
-# Copy project files
-COPY . /app
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install dependencies
-RUN pip install -r requirements.txt
-
-# Expose port for health check
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "app.py"]
+CMD ["python", "bot.py"]
