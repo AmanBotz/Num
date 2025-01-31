@@ -4,8 +4,8 @@ from pyrogram.types import Message
 from aiohttp import web
 
 # Add API credentials for Pyrofork
-API_ID = int(os.getenv("API_ID", 12345))  # Get from https://my.telegram.org
-API_HASH = os.getenv("API_HASH", "your_api_hash_here")
+API_ID = int(os.getenv("API_ID", 23288918))  # Get from https://my.telegram.org
+API_HASH = os.getenv("API_HASH", "fd2b1b2e0e6b2addf6e8031f15e511f2")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8000))
 
