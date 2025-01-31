@@ -9,13 +9,16 @@ app = Flask(__name__)
 # Global counter for numbering
 numbering_counter = {"count": 1}
 
+
 # Telegram bot commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Send me a file, and I'll add numbered captions to it.")
 
+
 async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
     numbering_counter["count"] = 1
     await update.message.reply_text("Numbering reset!")
+
 
 async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global numbering_counter
@@ -27,21 +30,24 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_document(file, caption=new_caption)
 
+
 # Flask endpoint for Telegram webhook
 @app.route("/webhook", methods=["POST"])
-def webhook():
+async def webhook():
     data = request.get_json()
     update = Update.de_json(data, app.bot.bot)
 
-    # Await the process_update coroutine
-    asyncio.run(app.bot.process_update(update))
+    # Process the update without blocking
+    await app.bot.process_update(update)
 
     return jsonify({"status": "ok"}), 200
+
 
 # Health check route for Koyeb
 @app.route("/health", methods=["GET"])
 def health_check():
     return jsonify({"status": "healthy"}), 200
+
 
 # Main function
 async def main():
@@ -60,11 +66,12 @@ async def main():
     app.bot.add_handler(CommandHandler("reset", reset))
     app.bot.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
 
-    # Set webhook (await the coroutine)
+    # Set webhook
     await app.bot.bot.set_webhook(url=webhook_url)
 
     # Start Flask server
     app.run(host="0.0.0.0", port=8000)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
