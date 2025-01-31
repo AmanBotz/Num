@@ -32,7 +32,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def webhook():
     data = request.get_json()
     update = Update.de_json(data, app.bot.bot)
-    app.bot.process_update(update)
+
+    # Await the process_update coroutine
+    asyncio.run(app.bot.process_update(update))
+
     return jsonify({"status": "ok"}), 200
 
 # Health check route for Koyeb
