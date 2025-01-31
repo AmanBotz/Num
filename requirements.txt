@@ -1,2 +1,3 @@
 pyrofork
 aiohttp
+pyrogram-tgcrypto  # For faster encryption
