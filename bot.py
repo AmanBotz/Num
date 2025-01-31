@@ -1,11 +1,11 @@
 import os
 import asyncio
-from flask import Flask, request, jsonify
+from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-import uvicorn
+from fastapi.responses import JSONResponse
 
-app = Flask(__name__)
+app = FastAPI()
 
 # Global counter for numbering
 numbering_counter = {"count": 1}
@@ -31,25 +31,25 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_document(file, caption=new_caption)
 
 
-# Flask endpoint for Telegram webhook
-@app.route("/webhook", methods=["POST"])
-async def webhook():
-    data = request.get_json()
+# FastAPI endpoint for Telegram webhook
+@app.post("/webhook")
+async def webhook(request: Request):
+    data = await request.json()
     update = Update.de_json(data, app.bot.bot)
 
-    # Process the update without blocking
+    # Process the update asynchronously
     await app.bot.process_update(update)
 
-    return jsonify({"status": "ok"}), 200
+    return JSONResponse({"status": "ok"}, status_code=200)
 
 
 # Health check route for Koyeb
-@app.route("/health", methods=["GET"])
-def health_check():
-    return jsonify({"status": "healthy"}), 200
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy"}
 
 
-# Main function
+# Main function to initialize the bot
 async def main():
     global app
 
@@ -69,9 +69,13 @@ async def main():
     # Set webhook
     await app.bot.bot.set_webhook(url=webhook_url)
 
-    # Start Flask server using uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
 
-
+# Run FastAPI app
 if __name__ == "__main__":
-    asyncio.run(main())
+    import uvicorn
+    import asyncio
+
+    # Start the bot and FastAPI server asynchronously
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())  # Initialize the bot
+    uvicorn.run(app, host="0.0.0.0", port=8000)  # Run FastAPI server
