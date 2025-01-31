@@ -5,10 +5,14 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 from fastapi.responses import JSONResponse
 
+# Initialize FastAPI app
 app = FastAPI()
 
 # Global counter for numbering
 numbering_counter = {"count": 1}
+
+# Store the bot instance in a global variable
+bot_app = None  # This will hold the bot instance
 
 # Telegram bot commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,10 +39,10 @@ async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    update = Update.de_json(data, app.bot.bot)
+    update = Update.de_json(data, bot_app.bot)  # Use the bot instance here
 
     # Process the update asynchronously
-    await app.bot.process_update(update)
+    await bot_app.bot.process_update(update)
 
     return JSONResponse({"status": "ok"}, status_code=200)
 
@@ -51,7 +55,7 @@ async def health_check():
 
 # Main function to initialize the bot
 async def main():
-    global app
+    global bot_app
 
     # Load bot token and webhook URL from environment variables
     bot_token = os.getenv("BOT_TOKEN")
@@ -60,14 +64,14 @@ async def main():
     if not bot_token or not webhook_url:
         raise EnvironmentError("BOT_TOKEN and WEBHOOK_URL must be set in the environment variables!")
 
-    # Telegram bot application
-    app.bot = Application.builder().token(bot_token).build()
-    app.bot.add_handler(CommandHandler("start", start))
-    app.bot.add_handler(CommandHandler("reset", reset))
-    app.bot.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
+    # Initialize the Telegram bot application
+    bot_app = Application.builder().token(bot_token).build()
+    bot_app.add_handler(CommandHandler("start", start))
+    bot_app.add_handler(CommandHandler("reset", reset))
+    bot_app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
 
     # Set webhook
-    await app.bot.bot.set_webhook(url=webhook_url)
+    await bot_app.bot.set_webhook(url=webhook_url)
 
 
 # Run FastAPI app
