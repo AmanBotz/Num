@@ -3,12 +3,12 @@ import asyncio
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+import uvicorn
 
 app = Flask(__name__)
 
 # Global counter for numbering
 numbering_counter = {"count": 1}
-
 
 # Telegram bot commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,8 +69,8 @@ async def main():
     # Set webhook
     await app.bot.bot.set_webhook(url=webhook_url)
 
-    # Start Flask server
-    app.run(host="0.0.0.0", port=8000)
+    # Start Flask server using uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 
 if __name__ == "__main__":
