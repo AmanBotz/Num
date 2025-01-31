@@ -1,4 +1,5 @@
 import os
+import asyncio
 from flask import Flask, request, jsonify
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
@@ -40,7 +41,7 @@ def health_check():
     return jsonify({"status": "healthy"}), 200
 
 # Main function
-def main():
+async def main():
     global app
 
     # Load bot token and webhook URL from environment variables
@@ -56,11 +57,11 @@ def main():
     app.bot.add_handler(CommandHandler("reset", reset))
     app.bot.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
 
-    # Set webhook
-    app.bot.bot.set_webhook(url=webhook_url)
+    # Set webhook (await the coroutine)
+    await app.bot.bot.set_webhook(url=webhook_url)
 
     # Start Flask server
     app.run(host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
