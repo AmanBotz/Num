@@ -23,35 +23,35 @@ app = Client(
 )
 
 @app.on_message(filters.command("start"))
-async def start(client: Client, message: Message):
-    await message.reply_text("Bot is running! Send files in channels where I'm admin to get 001)-style numbering.")
+async def start(_, message: Message):
+    await message.reply("✅ Bot is alive! Add me to a channel as admin with edit permissions.")
 
 @app.on_message(filters.command("reset"))
-async def reset(client: Client, message: Message):
+async def reset(_, message: Message):
     chat_id = message.chat.id
     file_counts[chat_id] = 0
-    await message.reply_text("Counter reset to 000)")
+    await message.reply("🔄 Counter reset to 000)")
 
 @app.on_message(filters.channel & (filters.document | filters.photo | filters.video | filters.audio))
-async def handle_channel_file(client: Client, message: Message):
+async def handle_file(_, message: Message):
     chat_id = message.chat.id
     file_counts[chat_id] = file_counts.get(chat_id, 0) + 1
     new_caption = f"{file_counts[chat_id]:03d}) {message.caption or ''}"
     await message.edit_caption(new_caption)
 
-async def run_server():
-    runner = web.AppRunner(web.Application())
+async def web_server():
+    app_web = web.Application()
+    app_web.router.add_get("/", health_check)
+    runner = web.AppRunner(app_web)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    print(f"Health check active on port {PORT}")
 
 async def main():
-    await asyncio.gather(
-        run_server(),
-        app.start(),
-    )
-    await asyncio.Event().wait()  # Keep running indefinitely
+    await web_server()
+    await app.start()
+    print("Bot started!")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     try:
