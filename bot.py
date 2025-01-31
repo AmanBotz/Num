@@ -6,7 +6,7 @@ from flask import Flask, request
 app = Flask(__name__)
 
 # Replace 'API_ID' and 'API_HASH' with your actual values
-API_ID = os.getenv("API_ID")
+API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
