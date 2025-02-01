@@ -108,22 +108,20 @@ async def set_number(client, message: Message):
 async def handle_file(client, message: Message):
     global current_number
 
-    # Get the original caption or set a default one
+    # Preserve the original caption if any
     original_caption = message.caption or ""
-
-    # Build the new caption with numbering (in the format 001))
+    # Build the new caption with numbering in the format "001) <original caption>"
     numbered_caption = f"{str(current_number).zfill(3)}) {original_caption}"
 
-    # Check if the message is from a channel (edit caption for the file in channel)
-    if message.chat.type == "channel":
+    # If the message is from a channel (detected by sender_chat being not None)
+    # then try to edit the caption rather than re-sending the file.
+    if message.sender_chat is not None:
         try:
-            # Edit the caption of the file in the channel
             await message.edit_caption(caption=numbered_caption)
         except Exception as e:
             print(f"Error editing caption in channel: {e}")
-    
     else:
-        # If not from a channel, send the updated caption to the user
+        # In private chats or groups, reply with the file with the updated caption.
         if message.document:
             await message.reply_document(document=message.document.file_id, caption=numbered_caption)
         elif message.audio:
@@ -133,7 +131,7 @@ async def handle_file(client, message: Message):
         elif message.photo:
             await message.reply_photo(photo=message.photo.file_id, caption=numbered_caption)
 
-    # Increment and save numbering state
+    # Increment and persist the numbering state
     current_number += 1
     save_number(current_number)
 
