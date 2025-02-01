@@ -1,11 +1,17 @@
-FROM python:3.10-slim
+# Use the latest Python 3.12 slim image
+FROM python:3.12-slim
 
-WORKDIR /app
+# Set working directory
+WORKDIR /bot
 
-COPY . /app
+# Copy bot code and requirements file
+COPY bot.py requirements.txt ./
 
+# Install required packages
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Expose port 8000 for the health check endpoint
 EXPOSE 8000
 
+# Set the default command to run the bot
 CMD ["python", "bot.py"]
