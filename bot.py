@@ -114,15 +114,24 @@ async def handle_file(client, message: Message):
     # Build the new caption with numbering (in the format 001))
     numbered_caption = f"{str(current_number).zfill(3)}) {original_caption}"
 
-    # Send the correct media type with the updated caption
-    if message.document:
-        await message.reply_document(document=message.document.file_id, caption=numbered_caption)
-    elif message.audio:
-        await message.reply_audio(audio=message.audio.file_id, caption=numbered_caption)
-    elif message.video:
-        await message.reply_video(video=message.video.file_id, caption=numbered_caption)
-    elif message.photo:
-        await message.reply_photo(photo=message.photo.file_id, caption=numbered_caption)
+    # Check if the message is from a channel (edit caption for the file in channel)
+    if message.chat.type == "channel":
+        try:
+            # Edit the caption of the file in the channel
+            await message.edit_caption(caption=numbered_caption)
+        except Exception as e:
+            print(f"Error editing caption in channel: {e}")
+    
+    else:
+        # If not from a channel, send the updated caption to the user
+        if message.document:
+            await message.reply_document(document=message.document.file_id, caption=numbered_caption)
+        elif message.audio:
+            await message.reply_audio(audio=message.audio.file_id, caption=numbered_caption)
+        elif message.video:
+            await message.reply_video(video=message.video.file_id, caption=numbered_caption)
+        elif message.photo:
+            await message.reply_photo(photo=message.photo.file_id, caption=numbered_caption)
 
     # Increment and save numbering state
     current_number += 1
