@@ -108,38 +108,43 @@ async def set_number(client, message: Message):
 async def handle_file(client, message: Message):
     global current_number
 
-    # Get file ID and assign a name if missing
     file_id = None
     filename = None
+    media_type = None
 
+    # Handle document type
     if message.document:
         file_id = message.document.file_id
         filename = message.document.file_name or "document"
+        media_type = "document"
+    # Handle audio type
     elif message.audio:
         file_id = message.audio.file_id
         filename = message.audio.file_name or "audio"
+        media_type = "audio"
+    # Handle video type
     elif message.video:
         file_id = message.video.file_id
         filename = message.video.file_name or "video"
+        media_type = "video"
+    # Handle photo type
     elif message.photo:
         file_id = message.photo.file_id
-        filename = "photo.jpg"  # Photos don't have filenames
+        filename = "photo.jpg"
+        media_type = "photo"
 
     # Build the caption with numbering
     numbered_caption = f"({str(current_number).zfill(3)}) {filename}"
 
-    # Send the file with the updated caption
-    if message.chat.type in ["channel", "supergroup"]:
-        await client.send_document(
-            chat_id=message.chat.id,
-            document=file_id,
-            caption=numbered_caption
-        )
-    else:
-        await message.reply_document(
-            document=file_id,
-            caption=numbered_caption
-        )
+    # Send the correct media type
+    if media_type == "document":
+        await message.reply_document(document=file_id, caption=numbered_caption)
+    elif media_type == "audio":
+        await message.reply_audio(audio=file_id, caption=numbered_caption)
+    elif media_type == "video":
+        await message.reply_video(video=file_id, caption=numbered_caption)
+    elif media_type == "photo":
+        await message.reply_photo(photo=file_id, caption=numbered_caption)
 
     # Increment and save numbering state
     current_number += 1
