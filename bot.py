@@ -6,7 +6,7 @@ from pyrogram.types import Message
 from flask import Flask
 
 # ------------------------------------------------------------------------------
-# Load configuration from environment variables
+# Load configuration from environment variables (set these in Koyeb)
 # ------------------------------------------------------------------------------
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
@@ -58,21 +58,37 @@ current_number = load_number()
 number_lock = asyncio.Lock()
 
 # ------------------------------------------------------------------------------
+# Bold Unicode digits mapping and formatting function
+# ------------------------------------------------------------------------------
+bold_digits = {
+    "0": "𝟶", "1": "𝟷", "2": "𝟸", "3": "𝟹", "4": "𝟺",
+    "5": "𝟻", "6": "𝟼", "7": "𝟽", "8": "𝟾", "9": "𝟿"
+}
+
+def format_bold_number(num: int) -> str:
+    """
+    Convert a number to a three-digit bold Unicode string inside square brackets.
+    Example: 3 → [𝟶𝟶𝟹]
+    """
+    num_str = str(num).zfill(3)
+    return "[" + "".join(bold_digits[digit] for digit in num_str) + "]"
+
+# ------------------------------------------------------------------------------
 # /start command: provides instructions
 # ------------------------------------------------------------------------------
 @bot.on_message(filters.command("start"))
 async def start(client, message: Message):
     await message.reply(
         "👋 **Welcome!**\n"
-        "This bot automatically adds numbering to file captions.\n\n"
+        "This bot automatically numbers file captions using a stylish format.\n\n"
         "🔹 **Commands:**\n"
-        "• `/reset` - Reset numbering to `001)`\n"
-        "• `/set <number>` - Set numbering starting from a custom number (e.g. `/set 051)`)\n"
-        "• Send any file and its caption will be updated with a sequential number!"
+        "• `/reset` - Reset numbering to `[𝟶𝟶𝟷]`\n"
+        "• `/set <number>` - Set numbering starting from a custom number (e.g. `/set 051`)\n"
+        "• Send any file and its caption will be updated to include a sequential number!"
     )
 
 # ------------------------------------------------------------------------------
-# /reset command: resets numbering to 001)
+# /reset command: resets numbering to 1
 # ------------------------------------------------------------------------------
 @bot.on_message(filters.command("reset"))
 async def reset(client, message: Message):
@@ -80,7 +96,7 @@ async def reset(client, message: Message):
     async with number_lock:
         current_number = 1
         save_number(current_number)
-    await message.reply("✅ Numbering has been reset to `001)`.")
+    await message.reply("✅ Numbering has been reset to " + format_bold_number(current_number))
 
 # ------------------------------------------------------------------------------
 # /set command: sets numbering to a custom value
@@ -98,9 +114,9 @@ async def set_number(client, message: Message):
         async with number_lock:
             current_number = new_number
             save_number(current_number)
-        await message.reply(f"✅ Numbering set to `{str(current_number).zfill(3)})`.")
+        await message.reply("✅ Numbering set to " + format_bold_number(current_number))
     except Exception:
-        await message.reply("❌ **Usage:** `/set <number>`\nExample: `/set 051)`")
+        await message.reply("❌ **Usage:** `/set <number>`\nExample: `/set 051`")
 
 # ------------------------------------------------------------------------------
 # Handler for all media messages (documents, photos, videos, audio)
@@ -108,22 +124,24 @@ async def set_number(client, message: Message):
 @bot.on_message(filters.media)
 async def handle_media(client, message: Message):
     global current_number
-    # Use the lock to guarantee each message gets a unique sequential number
+
+    # Use the lock to guarantee unique sequential numbering
     async with number_lock:
         num = current_number
         current_number += 1
         save_number(current_number)
-    # Build the new caption with the format "001) <original caption>"
-    new_caption = f"{str(num).zfill(3)}) " + (message.caption or "")
 
-    # If the message is in a channel, try to edit the caption (do not resend file)
+    # Build the new caption using the bold number formatting in square brackets.
+    new_caption = f"{format_bold_number(num)} " + (message.caption or "")
+
+    # If the message is in a channel, try to edit its caption.
     if message.chat.type == "channel":
         try:
             await message.edit_caption(caption=new_caption)
         except Exception as e:
             print(f"❌ Error editing caption in channel for message {message.message_id}: {e}")
     else:
-        # For private chats or groups, try to edit the caption; if that fails, reply with the media
+        # For private chats or groups, try to edit the caption; if that fails, reply with the media.
         try:
             await message.edit_caption(caption=new_caption)
         except Exception as e:
@@ -137,4 +155,7 @@ async def handle_media(client, message: Message):
             elif message.audio:
                 await message.reply_audio(audio=message.audio.file_id, caption=new_caption)
 
+# ------------------------------------------------------------------------------
+# Start the bot
+# ------------------------------------------------------------------------------
 bot.run()
