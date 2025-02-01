@@ -65,10 +65,11 @@ current_number = load_number()
 @bot.on_message(filters.command("start"))
 async def start(client, message: Message):
     await message.reply(
-        "Welcome! This bot automatically numbers files that you upload.\n\n"
-        "Commands available:\n"
-        "/reset - Reset numbering to (001)\n"
-        "/set <number> - Set the starting number (e.g. /set 051)"
+        "👋 Welcome! This bot automatically numbers files that you upload.\n\n"
+        "🔹 **Commands Available:**\n"
+        "✅ /reset - Reset numbering to (001)\n"
+        "✅ /set <number> - Start numbering from any number (e.g. /set 051)\n"
+        "✅ Just send any file, and it will be numbered!"
     )
 
 # ------------------------------------------------------------------------------
@@ -79,7 +80,7 @@ async def reset(client, message: Message):
     global current_number
     current_number = 1
     save_number(current_number)
-    await message.reply("Numbering has been reset to (001).")
+    await message.reply("✅ Numbering has been reset to (001).")
 
 # ------------------------------------------------------------------------------
 # Bot command: /set <number> (set numbering to a custom starting number)
@@ -96,48 +97,51 @@ async def set_number(client, message: Message):
             raise ValueError
         current_number = number
         save_number(current_number)
-        await message.reply(f"Numbering started from ({str(current_number).zfill(3)}).")
+        await message.reply(f"✅ Numbering started from ({str(current_number).zfill(3)}).")
     except (IndexError, ValueError):
-        await message.reply("Usage: /set <number>\nExample: /set 051")
+        await message.reply("❌ Usage: /set <number>\nExample: /set 051")
 
 # ------------------------------------------------------------------------------
-# Bot handler for file uploads (supports document, photo, audio, and video)
+# Bot handler for file uploads (supports documents, photos, audio, and videos)
 # ------------------------------------------------------------------------------
 @bot.on_message(filters.document | filters.photo | filters.audio | filters.video)
 async def handle_file(client, message: Message):
     global current_number
 
-    # Determine filename (for photos there might not be a filename)
+    # Get file ID and assign a name if missing
+    file_id = None
     filename = None
-    if message.document:
-        filename = message.document.file_name
-    elif message.audio:
-        filename = message.audio.file_name
-    elif message.video:
-        filename = message.video.file_name
-    elif message.photo:
-        filename = "photo.jpg"
-    else:
-        filename = "file"
 
-    # Build the caption with sequential numbering
+    if message.document:
+        file_id = message.document.file_id
+        filename = message.document.file_name or "document"
+    elif message.audio:
+        file_id = message.audio.file_id
+        filename = message.audio.file_name or "audio"
+    elif message.video:
+        file_id = message.video.file_id
+        filename = message.video.file_name or "video"
+    elif message.photo:
+        file_id = message.photo.file_id
+        filename = "photo.jpg"  # Photos don't have filenames
+
+    # Build the caption with numbering
     numbered_caption = f"({str(current_number).zfill(3)}) {filename}"
 
-    # If the file is coming from a channel or group, send it back with the numbered caption
+    # Send the file with the updated caption
     if message.chat.type in ["channel", "supergroup"]:
         await client.send_document(
             chat_id=message.chat.id,
-            document=message.document.file_id if message.document else None,
+            document=file_id,
             caption=numbered_caption
         )
     else:
-        # For private chats, reply directly with the numbered file
         await message.reply_document(
-            document=message.document.file_id if message.document else None,
+            document=file_id,
             caption=numbered_caption
         )
 
-    # Increment the numbering state and persist it
+    # Increment and save numbering state
     current_number += 1
     save_number(current_number)
 
