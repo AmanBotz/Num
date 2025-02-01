@@ -67,7 +67,7 @@ async def start(client, message: Message):
     await message.reply(
         "👋 Welcome! This bot automatically numbers files that you upload.\n\n"
         "🔹 **Commands Available:**\n"
-        "✅ /reset - Reset numbering to (001)\n"
+        "✅ /reset - Reset numbering to 001)\n"
         "✅ /set <number> - Start numbering from any number (e.g. /set 051)\n"
         "✅ Just send any file, and it will be numbered!"
     )
@@ -80,7 +80,7 @@ async def reset(client, message: Message):
     global current_number
     current_number = 1
     save_number(current_number)
-    await message.reply("✅ Numbering has been reset to (001).")
+    await message.reply("✅ Numbering has been reset to 001).")
 
 # ------------------------------------------------------------------------------
 # Bot command: /set <number> (set numbering to a custom starting number)
@@ -97,7 +97,7 @@ async def set_number(client, message: Message):
             raise ValueError
         current_number = number
         save_number(current_number)
-        await message.reply(f"✅ Numbering started from ({str(current_number).zfill(3)}).")
+        await message.reply(f"✅ Numbering started from {str(current_number).zfill(3)})")
     except (IndexError, ValueError):
         await message.reply("❌ Usage: /set <number>\nExample: /set 051")
 
@@ -108,43 +108,21 @@ async def set_number(client, message: Message):
 async def handle_file(client, message: Message):
     global current_number
 
-    file_id = None
-    filename = None
-    media_type = None
+    # Get the original caption or set a default one
+    original_caption = message.caption or ""
 
-    # Handle document type
+    # Build the new caption with numbering (in the format 001))
+    numbered_caption = f"{str(current_number).zfill(3)}) {original_caption}"
+
+    # Send the correct media type with the updated caption
     if message.document:
-        file_id = message.document.file_id
-        filename = message.document.file_name or "document"
-        media_type = "document"
-    # Handle audio type
+        await message.reply_document(document=message.document.file_id, caption=numbered_caption)
     elif message.audio:
-        file_id = message.audio.file_id
-        filename = message.audio.file_name or "audio"
-        media_type = "audio"
-    # Handle video type
+        await message.reply_audio(audio=message.audio.file_id, caption=numbered_caption)
     elif message.video:
-        file_id = message.video.file_id
-        filename = message.video.file_name or "video"
-        media_type = "video"
-    # Handle photo type
+        await message.reply_video(video=message.video.file_id, caption=numbered_caption)
     elif message.photo:
-        file_id = message.photo.file_id
-        filename = "photo.jpg"
-        media_type = "photo"
-
-    # Build the caption with numbering
-    numbered_caption = f"({str(current_number).zfill(3)}) {filename}"
-
-    # Send the correct media type
-    if media_type == "document":
-        await message.reply_document(document=file_id, caption=numbered_caption)
-    elif media_type == "audio":
-        await message.reply_audio(audio=file_id, caption=numbered_caption)
-    elif media_type == "video":
-        await message.reply_video(video=file_id, caption=numbered_caption)
-    elif media_type == "photo":
-        await message.reply_photo(photo=file_id, caption=numbered_caption)
+        await message.reply_photo(photo=message.photo.file_id, caption=numbered_caption)
 
     # Increment and save numbering state
     current_number += 1
