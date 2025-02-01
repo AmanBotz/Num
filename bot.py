@@ -1,85 +1,147 @@
 import os
-import asyncio
-from fastapi import FastAPI, Request
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-from fastapi.responses import JSONResponse
+from threading import Thread
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from flask import Flask
 
-# Initialize FastAPI app
-app = FastAPI()
+# ------------------------------------------------------------------------------
+# Load configuration from environment variables (set these in Koyeb)
+# ------------------------------------------------------------------------------
+try:
+    API_ID = int(os.getenv("API_ID", "0"))
+    API_HASH = os.getenv("API_HASH", "")
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+except Exception as e:
+    raise ValueError("Error reading environment variables: " + str(e))
 
-# Global counter for numbering
-numbering_counter = {"count": 1}
+if not API_ID or not API_HASH or not BOT_TOKEN:
+    raise ValueError("Missing one or more required environment variables: API_ID, API_HASH, BOT_TOKEN")
 
-# Store the bot instance in a global variable
-bot_app = None  # This will hold the bot instance
+# ------------------------------------------------------------------------------
+# Initialize the Pyrogram bot client
+# ------------------------------------------------------------------------------
+bot = Client("file_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-# Telegram bot commands
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Send me a file, and I'll add numbered captions to it.")
+# ------------------------------------------------------------------------------
+# Initialize Flask for the Koyeb health check endpoint
+# ------------------------------------------------------------------------------
+health_app = Flask(__name__)
 
+@health_app.route('/health')
+def health_check():
+    return "OK", 200
 
-async def reset(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    numbering_counter["count"] = 1
-    await update.message.reply_text("Numbering reset!")
+def run_flask():
+    health_app.run(port=8000, host="0.0.0.0")
 
+# Start the Flask app in a separate thread
+flask_thread = Thread(target=run_flask)
+flask_thread.daemon = True
+flask_thread.start()
 
-async def handle_file(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global numbering_counter
-    file = update.message.document or update.message.photo[-1]
-    caption = update.message.caption or "No caption provided"
-    number = f"{numbering_counter['count']:03d})"
-    new_caption = f"{number} {caption}"
-    numbering_counter["count"] += 1
+# ------------------------------------------------------------------------------
+# Global numbering state (persisted to file)
+# ------------------------------------------------------------------------------
+NUMBERING_FILE = "numbering_state.txt"
 
-    await update.message.reply_document(file, caption=new_caption)
+def load_number():
+    if os.path.exists(NUMBERING_FILE):
+        try:
+            with open(NUMBERING_FILE, "r") as f:
+                return int(f.read().strip())
+        except Exception:
+            return 1
+    return 1
 
+def save_number(number):
+    with open(NUMBERING_FILE, "w") as f:
+        f.write(str(number))
 
-# FastAPI endpoint for Telegram webhook
-@app.post("/webhook")
-async def webhook(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, bot_app.bot)  # Use the bot instance here
+current_number = load_number()
 
-    # Process the update asynchronously
-    await bot_app.bot.process_update(update)
+# ------------------------------------------------------------------------------
+# Bot command: /start
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("start"))
+async def start(client, message: Message):
+    await message.reply(
+        "Welcome! This bot automatically numbers files that you upload.\n\n"
+        "Commands available:\n"
+        "/reset - Reset numbering to (001)\n"
+        "/set <number> - Set the starting number (e.g. /set 051)"
+    )
 
-    return JSONResponse({"status": "ok"}, status_code=200)
+# ------------------------------------------------------------------------------
+# Bot command: /reset (reset numbering to 001)
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("reset"))
+async def reset(client, message: Message):
+    global current_number
+    current_number = 1
+    save_number(current_number)
+    await message.reply("Numbering has been reset to (001).")
 
+# ------------------------------------------------------------------------------
+# Bot command: /set <number> (set numbering to a custom starting number)
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("set"))
+async def set_number(client, message: Message):
+    global current_number
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            raise ValueError
+        number = int(parts[1])
+        if number < 1:
+            raise ValueError
+        current_number = number
+        save_number(current_number)
+        await message.reply(f"Numbering started from ({str(current_number).zfill(3)}).")
+    except (IndexError, ValueError):
+        await message.reply("Usage: /set <number>\nExample: /set 051")
 
-# Health check route for Koyeb
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy"}
+# ------------------------------------------------------------------------------
+# Bot handler for file uploads (supports document, photo, audio, and video)
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.document | filters.photo | filters.audio | filters.video)
+async def handle_file(client, message: Message):
+    global current_number
 
+    # Determine filename (for photos there might not be a filename)
+    filename = None
+    if message.document:
+        filename = message.document.file_name
+    elif message.audio:
+        filename = message.audio.file_name
+    elif message.video:
+        filename = message.video.file_name
+    elif message.photo:
+        filename = "photo.jpg"
+    else:
+        filename = "file"
 
-# Main function to initialize the bot
-async def main():
-    global bot_app
+    # Build the caption with sequential numbering
+    numbered_caption = f"({str(current_number).zfill(3)}) {filename}"
 
-    # Load bot token and webhook URL from environment variables
-    bot_token = os.getenv("BOT_TOKEN")
-    webhook_url = os.getenv("WEBHOOK_URL")
+    # If the file is coming from a channel or group, send it back with the numbered caption
+    if message.chat.type in ["channel", "supergroup"]:
+        await client.send_document(
+            chat_id=message.chat.id,
+            document=message.document.file_id if message.document else None,
+            caption=numbered_caption
+        )
+    else:
+        # For private chats, reply directly with the numbered file
+        await message.reply_document(
+            document=message.document.file_id if message.document else None,
+            caption=numbered_caption
+        )
 
-    if not bot_token or not webhook_url:
-        raise EnvironmentError("BOT_TOKEN and WEBHOOK_URL must be set in the environment variables!")
+    # Increment the numbering state and persist it
+    current_number += 1
+    save_number(current_number)
 
-    # Initialize the Telegram bot application
-    bot_app = Application.builder().token(bot_token).build()
-    bot_app.add_handler(CommandHandler("start", start))
-    bot_app.add_handler(CommandHandler("reset", reset))
-    bot_app.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, handle_file))
-
-    # Set webhook
-    await bot_app.bot.set_webhook(url=webhook_url)
-
-
-# Run FastAPI app
-if __name__ == "__main__":
-    import uvicorn
-    import asyncio
-
-    # Start the bot and FastAPI server asynchronously
-    loop = asyncio.get_event_loop()
-    loop.create_task(main())  # Initialize the bot
-    uvicorn.run(app, host="0.0.0.0", port=8000)  # Run FastAPI server
+# ------------------------------------------------------------------------------
+# Start the bot
+# ------------------------------------------------------------------------------
+bot.run()
