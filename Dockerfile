@@ -4,10 +4,13 @@ FROM python:3.12-slim
 # Set working directory
 WORKDIR /bot
 
+# Install system dependencies needed for tgcrypto
+RUN apt-get update && apt-get install -y gcc python3-dev
+
 # Copy bot code and requirements file
 COPY bot.py requirements.txt ./
 
-# Install required packages
+# Install required Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose port 8000 for the health check endpoint
