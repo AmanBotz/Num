@@ -1,4 +1,5 @@
 import os
+import asyncio
 from threading import Thread
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -60,6 +61,32 @@ def save_number(number):
 current_number = load_number()
 
 # ------------------------------------------------------------------------------
+# Global dictionary to hold media groups in channels
+# ------------------------------------------------------------------------------
+media_groups = {}  # key: media_group_id, value: list of Message objects
+
+# ------------------------------------------------------------------------------
+# Asynchronous function to process a media group after a short delay
+# ------------------------------------------------------------------------------
+async def process_media_group(group_id: str):
+    # Wait for additional messages in the same media group
+    await asyncio.sleep(2)  # adjust delay as needed
+    global current_number
+    messages = media_groups.pop(group_id, [])
+    # Sort messages by message_id to have a consistent order
+    messages.sort(key=lambda m: m.message_id)
+    for msg in messages:
+        original_caption = msg.caption or ""
+        # Build new caption with sequential numbering in the format "001) <original caption>"
+        new_caption = f"{str(current_number).zfill(3)}) {original_caption}"
+        try:
+            await msg.edit_caption(caption=new_caption)
+        except Exception as e:
+            print(f"Error editing caption for message {msg.message_id} in group {group_id}: {e}")
+        current_number += 1
+    save_number(current_number)
+
+# ------------------------------------------------------------------------------
 # Bot command: /start
 # ------------------------------------------------------------------------------
 @bot.on_message(filters.command("start"))
@@ -111,29 +138,40 @@ async def handle_file(client, message: Message):
     # Preserve the original caption if any
     original_caption = message.caption or ""
     # Build the new caption with numbering in the format "001) <original caption>"
-    numbered_caption = f"{str(current_number).zfill(3)}) {original_caption}"
+    new_caption = f"{str(current_number).zfill(3)}) {original_caption}"
 
-    # If the message is from a channel (detected by sender_chat being not None)
-    # then try to edit the caption rather than re-sending the file.
-    if message.sender_chat is not None:
-        try:
-            await message.edit_caption(caption=numbered_caption)
-        except Exception as e:
-            print(f"Error editing caption in channel: {e}")
+    # Check if the message is in a channel
+    if message.chat.type == "channel":
+        # Check if this message is part of a media group
+        if message.media_group_id:
+            group_id = message.media_group_id
+            # Add message to the media group list
+            if group_id not in media_groups:
+                media_groups[group_id] = []
+            media_groups[group_id].append(message)
+            # If this is the first message in the group, schedule processing
+            if len(media_groups[group_id]) == 1:
+                asyncio.create_task(process_media_group(group_id))
+        else:
+            # Single message in channel (not a media group), simply edit its caption
+            try:
+                await message.edit_caption(caption=new_caption)
+            except Exception as e:
+                print(f"Error editing caption in channel: {e}")
+            current_number += 1
+            save_number(current_number)
     else:
-        # In private chats or groups, reply with the file with the updated caption.
+        # For private chats or groups, simply reply with the file using the new caption.
         if message.document:
-            await message.reply_document(document=message.document.file_id, caption=numbered_caption)
+            await message.reply_document(document=message.document.file_id, caption=new_caption)
         elif message.audio:
-            await message.reply_audio(audio=message.audio.file_id, caption=numbered_caption)
+            await message.reply_audio(audio=message.audio.file_id, caption=new_caption)
         elif message.video:
-            await message.reply_video(video=message.video.file_id, caption=numbered_caption)
+            await message.reply_video(video=message.video.file_id, caption=new_caption)
         elif message.photo:
-            await message.reply_photo(photo=message.photo.file_id, caption=numbered_caption)
-
-    # Increment and persist the numbering state
-    current_number += 1
-    save_number(current_number)
+            await message.reply_photo(photo=message.photo.file_id, caption=new_caption)
+        current_number += 1
+        save_number(current_number)
 
 # ------------------------------------------------------------------------------
 # Start the bot
