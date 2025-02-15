@@ -108,7 +108,7 @@ async def start(client, message: Message):
         "• <code>/set &lt;number&gt;</code> - Set numbering starting from a custom number (e.g. <code>/set 051</code>)\n"
         "• Send any file with a caption that contains \"Class Date\" and everything from that keyword onward will be formatted as a quote."
     )
-    await message.reply(instructions, parse_mode="HTML")
+    await message.reply(instructions, parse_mode="html")
 
 # ------------------------------------------------------------------------------
 # /reset command: resets numbering to 1
@@ -119,7 +119,7 @@ async def reset(client, message: Message):
     async with number_lock:
         current_number = 1
         save_number(current_number)
-    await message.reply("✅ Numbering has been reset to " + format_bold_number(current_number), parse_mode="HTML")
+    await message.reply("✅ Numbering has been reset to " + format_bold_number(current_number), parse_mode="html")
 
 # ------------------------------------------------------------------------------
 # /set command: sets numbering to a custom value
@@ -137,9 +137,9 @@ async def set_number(client, message: Message):
         async with number_lock:
             current_number = new_number
             save_number(current_number)
-        await message.reply("✅ Numbering set to " + format_bold_number(current_number), parse_mode="HTML")
+        await message.reply("✅ Numbering set to " + format_bold_number(current_number), parse_mode="html")
     except Exception:
-        await message.reply("❌ <b>Usage:</b> <code>/set &lt;number&gt;</code>\nExample: <code>/set 051</code>", parse_mode="HTML")
+        await message.reply("❌ <b>Usage:</b> <code>/set &lt;number&gt;</code>\nExample: <code>/set 051</code>", parse_mode="html")
 
 # ------------------------------------------------------------------------------
 # Handler for all media messages (documents, photos, videos, audio)
@@ -160,18 +160,18 @@ async def handle_media(client, message: Message):
     new_caption = f"{numbering} {formatted_caption_body}"
 
     try:
-        await message.edit_caption(new_caption, parse_mode="HTML")
+        await message.edit_caption(new_caption, parse_mode="html")
     except Exception as e:
         print(f"Error editing caption: {e}")
         # If editing fails, reply with the media and the new caption.
         if message.document:
-            await message.reply_document(message.document.file_id, caption=new_caption, parse_mode="HTML")
+            await message.reply_document(message.document.file_id, caption=new_caption, parse_mode="html")
         elif message.photo:
-            await message.reply_photo(message.photo.file_id, caption=new_caption, parse_mode="HTML")
+            await message.reply_photo(message.photo.file_id, caption=new_caption, parse_mode="html")
         elif message.video:
-            await message.reply_video(message.video.file_id, caption=new_caption, parse_mode="HTML")
+            await message.reply_video(message.video.file_id, caption=new_caption, parse_mode="html")
         elif message.audio:
-            await message.reply_audio(message.audio.file_id, caption=new_caption, parse_mode="HTML")
+            await message.reply_audio(message.audio.file_id, caption=new_caption, parse_mode="html")
 
 # ------------------------------------------------------------------------------
 # Start the bot
