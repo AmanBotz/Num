@@ -59,39 +59,39 @@ current_number = load_number()
 number_lock = asyncio.Lock()
 
 # ------------------------------------------------------------------------------
-# Mathematical Sans-Serif Plain conversion function (non bold, non italic)
+# Convert text to Mathematical Sans‑Serif Plain (non bold, non italic)
 # ------------------------------------------------------------------------------
 def to_math_sans_plain(text: str) -> str:
     result = []
     for ch in text:
         if 'A' <= ch <= 'Z':
-            # Mathematical Sans-Serif Uppercase: U+1D5A0 to U+1D5B9
+            # Mathematical Sans‑Serif Uppercase: U+1D5A0 to U+1D5B9
             result.append(chr(ord(ch) - ord('A') + 0x1D5A0))
         elif 'a' <= ch <= 'z':
-            # Mathematical Sans-Serif Lowercase: U+1D5BA to U+1D5D3
+            # Mathematical Sans‑Serif Lowercase: U+1D5BA to U+1D5D3
             result.append(chr(ord(ch) - ord('a') + 0x1D5BA))
         elif '0' <= ch <= '9':
-            # Mathematical Sans-Serif Digits: U+1D7E2 to U+1D7EB
+            # Mathematical Sans‑Serif Digits: U+1D7E2 to U+1D7EB
             result.append(chr(ord(ch) - ord('0') + 0x1D7E2))
         else:
             result.append(ch)
     return ''.join(result)
 
 # ------------------------------------------------------------------------------
-# (Optional) Format number for numbering using the same style
+# Format the numbering (e.g., state 1 becomes "001" converted to Unicode)
 # ------------------------------------------------------------------------------
 def format_number(num: int) -> str:
     num_str = str(num).zfill(3)
     return to_math_sans_plain(num_str)
 
 # ------------------------------------------------------------------------------
-# Helper: Wrap text in an HTML blockquote
+# Wrap text in an HTML blockquote
 # ------------------------------------------------------------------------------
 def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ------------------------------------------------------------------------------
-# Remove unwanted sentences (fixed phrases and numeric markers) from caption
+# Remove unwanted sentences and numeric markers from the caption
 # ------------------------------------------------------------------------------
 def remove_unwanted_sentences(text: str) -> str:
     unwanted_phrases = [
@@ -101,37 +101,46 @@ def remove_unwanted_sentences(text: str) -> str:
     ]
     for phrase in unwanted_phrases:
         text = text.replace(phrase, "")
-    # Remove markers like "001).", "002).", ... up to "300)."
+    # Remove numeric markers like "033).", "001).", etc.
+    text = re.sub(r'^\s*\d+\)\.?\s*', '', text, flags=re.MULTILINE)
+    # Remove markers like "001)." anywhere in the text
     text = re.sub(r'\b(?:0\d{2}|[1-2]\d{2}|300)\)\.', '', text)
     return text.strip()
 
 # ------------------------------------------------------------------------------
-# Custom function to process text starting from "Class Date"
+# Clean the prefix (remove numbering from the beginning)
 # ------------------------------------------------------------------------------
-def apply_custom_quote_formatting(text: str, numbering: str) -> str:
-    keyword = "class date"
-    lower_text = text.lower()
-    idx = lower_text.find(keyword)
+def clean_prefix(prefix: str) -> str:
+    # Remove any leading numbering pattern like "033)." or "033) " at the start
+    return re.sub(r'^\s*\d+\)\.?\s*', '', prefix).strip()
+
+# ------------------------------------------------------------------------------
+# Process caption: split into prefix (before "Class Date") and suffix (starting at "Class Date")
+# Then, convert suffix to Mathematical Sans‑Serif Plain, prepend numbering, wrap in blockquote,
+# and finally append the cleaned prefix below.
+# ------------------------------------------------------------------------------
+def process_caption(text: str, numbering: str) -> str:
+    cleaned_text = remove_unwanted_sentences(text)
+    lower_text = cleaned_text.lower()
+    idx = lower_text.find("class date")
     if idx != -1:
-        # Extract text from "Class Date" onward
-        block_text = text[idx:].strip()
-        # Remove any newline characters to force a single line
-        block_text = ' '.join(block_text.split())
-        # Convert the block text to Mathematical Sans-Serif Plain style
-        block_text_converted = to_math_sans_plain(block_text)
-        # Prepend the numbering inside the blockquote before "Class Date"
-        block_text_final = numbering + " " + block_text_converted
-        # Wrap in blockquote tags
-        blockquoted = blockquote(block_text_final)
-        # Get any text before "Class Date" (if present)
-        prefix = text[:idx].strip()
-        if prefix:
-            return prefix + " " + blockquoted
-        else:
-            return blockquoted
+        # Split the caption into two parts:
+        prefix = cleaned_text[:idx].strip()
+        suffix = cleaned_text[idx:].strip()
+        # Force the suffix onto one line:
+        suffix_one_line = ' '.join(suffix.split())
+        # Convert the entire suffix to Mathematical Sans‑Serif Plain
+        converted_suffix = to_math_sans_plain(suffix_one_line)
+        # Prepend numbering (in square brackets) to the converted suffix
+        block_text = f"[{numbering}] {converted_suffix}"
+        blockquoted = blockquote(block_text)
+        # Clean the prefix (remove any numbering that might be present)
+        clean_pref = clean_prefix(prefix)
+        # Final caption: blockquote first line, then the prefix on the next line
+        return f"{blockquoted}\n{clean_pref}"
     else:
-        # If keyword not found, simply return the cleaned text (optionally converted)
-        return to_math_sans_plain(text)
+        # If keyword not found, return the whole caption converted (without blockquote)
+        return to_math_sans_plain(cleaned_text)
 
 # ------------------------------------------------------------------------------
 # /start command: provides instructions to the user
@@ -140,11 +149,12 @@ def apply_custom_quote_formatting(text: str, numbering: str) -> str:
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome!</b>\n"
-        "This bot automatically numbers file captions and applies custom blockquote formatting for the portion of the caption starting from the keyword \"Class Date\".\n\n"
+        "This bot automatically numbers file captions and processes the text starting from the keyword \"Class Date\". "
+        "It moves that portion to the first line as a blockquote (with numbering in Mathematical Sans‑Serif Plain), and places any text before it below.\n\n"
         "<b>Commands:</b>\n"
         "• <code>/reset</code> - Reset numbering to " + format_number(1) + "\n"
         "• <code>/set &lt;number&gt;</code> - Set numbering starting from a custom number (e.g. <code>/set 051</code>)\n"
-        "• Send any file with a caption that contains \"Class Date\". The bot will take the text from \"Class Date\" onward, convert it into non-bold, non-italic Unicode (Mathematical Sans‑Serif Plain), prepend numbering to it, and wrap it in a blockquote on a single line."
+        "• Send any file with a caption containing \"Class Date\"."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
 
@@ -191,13 +201,9 @@ async def handle_media(client, message: Message):
         current_number += 1
         save_number(current_number)
 
-    # Get the original caption and clean it.
     orig_caption = message.caption or ""
-    cleaned_caption = remove_unwanted_sentences(orig_caption)
-    # Get numbering in Mathematical Sans-Serif Plain style.
     numbering = format_number(num)
-    # Apply custom quote formatting on the text starting from "Class Date"
-    new_caption = apply_custom_quote_formatting(cleaned_caption, numbering)
+    new_caption = process_caption(orig_caption, numbering)
 
     try:
         await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
