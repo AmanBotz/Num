@@ -91,56 +91,99 @@ def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ------------------------------------------------------------------------------
-# Remove unwanted sentences and numeric markers from the caption
+# Remove unwanted sentences and markers from the caption.
+# Added "•" to unwanted phrases.
 # ------------------------------------------------------------------------------
 def remove_unwanted_sentences(text: str) -> str:
     unwanted_phrases = [
         "Batch » Maths Spl-30 (Pre+Mains)",
         "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
-        "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷"
+        "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
+        "•"  # remove bullet characters
     ]
     for phrase in unwanted_phrases:
         text = text.replace(phrase, "")
-    # Remove numeric markers like "033).", "001).", etc.
+    # Remove any leading numbering pattern like "033)." at the start of a line
     text = re.sub(r'^\s*\d+\)\.?\s*', '', text, flags=re.MULTILINE)
-    # Remove markers like "001)." anywhere in the text
+    # Remove numeric markers like "001)." anywhere in the text
     text = re.sub(r'\b(?:0\d{2}|[1-2]\d{2}|300)\)\.', '', text)
     return text.strip()
 
 # ------------------------------------------------------------------------------
-# Clean the prefix (remove numbering from the beginning)
+# Clean prefix: remove any leading numbering from the prefix text.
 # ------------------------------------------------------------------------------
 def clean_prefix(prefix: str) -> str:
-    # Remove any leading numbering pattern like "033)." or "033) " at the start
     return re.sub(r'^\s*\d+\)\.?\s*', '', prefix).strip()
 
 # ------------------------------------------------------------------------------
-# Process caption: split into prefix (before "Class Date") and suffix (starting at "Class Date")
-# Then, convert suffix to Mathematical Sans‑Serif Plain, prepend numbering, wrap in blockquote,
-# and finally append the cleaned prefix below.
+# Process caption:
+#   - Split into prefix (before "Class Date") and suffix (from "Class Date" onward).
+#   - If "Class Date" found:
+#         * Force the suffix to one line.
+#         * Convert suffix to Mathematical Sans‑Serif Plain.
+#         * Prepend numbering (in square brackets) to suffix.
+#         * Wrap suffix in blockquote.
+#         * Append the cleaned prefix below.
+#   - If "Class Date" not found:
+#         * Blockquote only the numbering, then append the full cleaned caption below.
 # ------------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
     cleaned_text = remove_unwanted_sentences(text)
     lower_text = cleaned_text.lower()
     idx = lower_text.find("class date")
     if idx != -1:
-        # Split the caption into two parts:
         prefix = cleaned_text[:idx].strip()
         suffix = cleaned_text[idx:].strip()
-        # Force the suffix onto one line:
+        # Force suffix to one line:
         suffix_one_line = ' '.join(suffix.split())
-        # Convert the entire suffix to Mathematical Sans‑Serif Plain
+        # Convert suffix to Mathematical Sans‑Serif Plain
         converted_suffix = to_math_sans_plain(suffix_one_line)
-        # Prepend numbering (in square brackets) to the converted suffix
+        # Prepend numbering (in square brackets) to suffix
         block_text = f"[{numbering}] {converted_suffix}"
         blockquoted = blockquote(block_text)
-        # Clean the prefix (remove any numbering that might be present)
+        # Clean the prefix and return blockquote on first line, then prefix on next
         clean_pref = clean_prefix(prefix)
-        # Final caption: blockquote first line, then the prefix on the next line
         return f"{blockquoted}\n{clean_pref}"
     else:
-        # If keyword not found, return the whole caption converted (without blockquote)
-        return to_math_sans_plain(cleaned_text)
+        # If "Class Date" not found, blockquote only the numbering
+        blockquoted = blockquote(f"[{numbering}]")
+        return f"{blockquoted}\n{to_math_sans_plain(cleaned_text)}"
+
+# ------------------------------------------------------------------------------
+# Handler for media messages:
+#   - Process caption for video files only.
+#   - If a PDF is sent, remove the caption entirely.
+#   - For other file types, leave the caption unchanged.
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.media)
+async def handle_media(client, message: Message):
+    global current_number
+
+    # Check if it's a video file
+    if message.video:
+        async with number_lock:
+            num = current_number
+            current_number += 1
+            save_number(current_number)
+        orig_caption = message.caption or ""
+        numbering = format_number(num)
+        new_caption = process_caption(orig_caption, numbering)
+        try:
+            await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            print(f"Error editing caption: {e}")
+            # Fallback: resend the media with the new caption.
+            await message.reply_video(message.video.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
+    elif message.document and message.document.mime_type == "application/pdf":
+        # For PDF files, remove the caption entirely.
+        try:
+            await message.edit_caption("", parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            print(f"Error editing caption for PDF: {e}")
+            await message.reply_document(message.document.file_id, caption="", parse_mode=enums.ParseMode.HTML)
+    else:
+        # For other file types, do not modify the caption.
+        pass
 
 # ------------------------------------------------------------------------------
 # /start command: provides instructions to the user
@@ -149,12 +192,15 @@ def process_caption(text: str, numbering: str) -> str:
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome!</b>\n"
-        "This bot automatically numbers file captions and processes the text starting from the keyword \"Class Date\". "
-        "It moves that portion to the first line as a blockquote (with numbering in Mathematical Sans‑Serif Plain), and places any text before it below.\n\n"
+        "This bot automatically numbers file captions and processes the text starting from the keyword \"Class Date\" for video files. "
+        "If a caption contains \"Class Date\", the text from that point is forced onto one line, converted into non-bold, non-italic Mathematical Sans‑Serif Plain style, and prepended with a numbering prefix (in square brackets) inside a blockquote. "
+        "Any text before \"Class Date\" is appended on a new line. "
+        "If \"Class Date\" is not found, only the numbering is blockquoted and the entire caption is converted. "
+        "For PDF files, the caption is entirely removed.\n\n"
         "<b>Commands:</b>\n"
         "• <code>/reset</code> - Reset numbering to " + format_number(1) + "\n"
         "• <code>/set &lt;number&gt;</code> - Set numbering starting from a custom number (e.g. <code>/set 051</code>)\n"
-        "• Send any file with a caption containing \"Class Date\"."
+        "• Send a video file with a caption containing \"Class Date\" or a PDF file to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
 
@@ -188,36 +234,6 @@ async def set_number(client, message: Message):
         await message.reply("✅ Numbering set to " + format_number(current_number), parse_mode=enums.ParseMode.HTML)
     except Exception:
         await message.reply("❌ <b>Usage:</b> <code>/set &lt;number&gt;</code>\nExample: <code>/set 051</code>", parse_mode=enums.ParseMode.HTML)
-
-# ------------------------------------------------------------------------------
-# Handler for all media messages (documents, photos, videos, audio)
-# ------------------------------------------------------------------------------
-@bot.on_message(filters.media)
-async def handle_media(client, message: Message):
-    global current_number
-
-    async with number_lock:
-        num = current_number
-        current_number += 1
-        save_number(current_number)
-
-    orig_caption = message.caption or ""
-    numbering = format_number(num)
-    new_caption = process_caption(orig_caption, numbering)
-
-    try:
-        await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
-    except Exception as e:
-        print(f"Error editing caption: {e}")
-        # Fallback: resend the media with the new caption.
-        if message.document:
-            await message.reply_document(message.document.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
-        elif message.photo:
-            await message.reply_photo(message.photo.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
-        elif message.video:
-            await message.reply_video(message.video.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
-        elif message.audio:
-            await message.reply_audio(message.audio.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
 
 # ------------------------------------------------------------------------------
 # Start the bot
