@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 from threading import Thread
 from pyrogram import Client, filters, enums  # Import enums
 from pyrogram.types import Message
@@ -70,15 +71,12 @@ def format_bold_number(num: int) -> str:
 
 # ------------------------------------------------------------------------------
 # Helper: Simulated blockquote formatting in HTML.
-# We simply wrap the text in <blockquote> tags.
 # ------------------------------------------------------------------------------
 def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ------------------------------------------------------------------------------
 # Apply quote formatting from the "Class Date" keyword onward.
-# If "Class Date" is found (case-insensitive) in the caption,
-# then everything from that keyword onward is wrapped in a blockquote.
 # ------------------------------------------------------------------------------
 def apply_quote_formatting(text: str, keyword: str = "Class Date") -> str:
     lower_text = text.lower()
@@ -93,6 +91,21 @@ def apply_quote_formatting(text: str, keyword: str = "Class Date") -> str:
         else:
             return quoted
     return text
+
+# ------------------------------------------------------------------------------
+# Remove unwanted sentences and numeric markers from the caption
+# ------------------------------------------------------------------------------
+def remove_unwanted_sentences(text: str) -> str:
+    unwanted_phrases = [
+        "Batch » Maths Spl-30 (Pre+Mains)",
+        "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
+        "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷"
+    ]
+    for phrase in unwanted_phrases:
+        text = text.replace(phrase, "")
+    # Remove any occurrence of a three-digit number (from 001 to 300) followed by ")."
+    text = re.sub(r'\b(?:0\d{2}|[1-2]\d{2}|300)\)\.', '', text)
+    return text.strip()
 
 # ------------------------------------------------------------------------------
 # /start command: provides instructions to the user
@@ -152,10 +165,11 @@ async def handle_media(client, message: Message):
         current_number += 1
         save_number(current_number)
 
+    # Retrieve original caption, remove unwanted sentences (including numeric markers), then apply formatting.
     orig_caption = message.caption or ""
+    cleaned_caption = remove_unwanted_sentences(orig_caption)
     numbering = format_bold_number(num)
-    # Apply quote formatting from "Class Date" onward.
-    formatted_caption_body = apply_quote_formatting(orig_caption)
+    formatted_caption_body = apply_quote_formatting(cleaned_caption)
     new_caption = f"{numbering} {formatted_caption_body}"
 
     try:
