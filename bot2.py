@@ -38,16 +38,30 @@ flask_thread.daemon = True
 flask_thread.start()
 
 # ------------------------------------------------------------------------------
-# Remove the unwanted text "𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »" from the caption
+# Remove the unwanted text "𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »" from the given text
 # ------------------------------------------------------------------------------
 def remove_unwanted_text(text: str) -> str:
-    return text.replace("𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »", "").strip()
+    return text.replace("𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »", "")
 
 # ------------------------------------------------------------------------------
-# Process caption: simply remove the unwanted text and return the result unchanged
+# Process caption: remove the unwanted text but preserve HTML blockquotes.
+# If a blockquote becomes empty, insert a non-breaking space to force its display.
 # ------------------------------------------------------------------------------
 def process_caption(text: str) -> str:
-    return remove_unwanted_text(text)
+    # First, remove the unwanted text anywhere in the caption.
+    new_text = remove_unwanted_text(text)
+    
+    # Define a function to fix each blockquote content.
+    def fix_blockquote(match):
+        inner = match.group(1)
+        # If, after removal, the inner content is empty or just whitespace, replace with a non-breaking space.
+        if not inner.strip():
+            return "<blockquote>&nbsp;</blockquote>"
+        return f"<blockquote>{inner}</blockquote>"
+    
+    # Process all blockquote tags to ensure they're preserved.
+    new_text = re.sub(r"<blockquote>(.*?)</blockquote>", fix_blockquote, new_text, flags=re.DOTALL)
+    return new_text
 
 # ------------------------------------------------------------------------------
 # Handler for media messages
@@ -79,8 +93,8 @@ async def handle_media(client, message: Message):
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome to Bot2!</b>\n"
-        "This bot automatically removes the text \"𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »\" from video file captions while preserving all existing formatting (including blockquotes).\n\n"
-        "Simply send a video file with a caption that contains the unwanted text to see the processing in action."
+        "This bot automatically removes the text \"𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »\" from video file captions while preserving any existing formatting, including blockquotes.\n\n"
+        "Simply send a video file with a caption containing the unwanted text to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
 
