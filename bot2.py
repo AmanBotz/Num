@@ -38,29 +38,14 @@ flask_thread.daemon = True
 flask_thread.start()
 
 # ------------------------------------------------------------------------------
-# Remove the unwanted text "𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »" from the given text
-# ------------------------------------------------------------------------------
-def remove_unwanted_text(text: str) -> str:
-    return text.replace("𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »", "")
-
-# ------------------------------------------------------------------------------
-# Process caption: remove the unwanted text but preserve HTML blockquotes.
-# If a blockquote becomes empty, insert a non-breaking space to force its display.
+# Process caption: remove the unwanted text but preserve all HTML formatting.
+# If a blockquote becomes empty, insert a non‑breaking space.
 # ------------------------------------------------------------------------------
 def process_caption(text: str) -> str:
-    # First, remove the unwanted text anywhere in the caption.
-    new_text = remove_unwanted_text(text)
-    
-    # Define a function to fix each blockquote content.
-    def fix_blockquote(match):
-        inner = match.group(1)
-        # If, after removal, the inner content is empty or just whitespace, replace with a non-breaking space.
-        if not inner.strip():
-            return "<blockquote>&nbsp;</blockquote>"
-        return f"<blockquote>{inner}</blockquote>"
-    
-    # Process all blockquote tags to ensure they're preserved.
-    new_text = re.sub(r"<blockquote>(.*?)</blockquote>", fix_blockquote, new_text, flags=re.DOTALL)
+    # Remove the unwanted text globally.
+    new_text = text.replace("𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »", "")
+    # Replace any blockquote that is empty (or only whitespace) with one containing a non-breaking space.
+    new_text = re.sub(r"(?i)(<blockquote>\s*</blockquote>)", "<blockquote>&nbsp;</blockquote>", new_text)
     return new_text
 
 # ------------------------------------------------------------------------------
@@ -93,7 +78,7 @@ async def handle_media(client, message: Message):
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome to Bot2!</b>\n"
-        "This bot automatically removes the text \"𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »\" from video file captions while preserving any existing formatting, including blockquotes.\n\n"
+        "This bot automatically removes the text \"𝖢𝗅𝖺𝗌𝗌 𝖣𝖺𝗍𝖾 »\" from video file captions while preserving all formatting, including blockquotes.\n\n"
         "Simply send a video file with a caption containing the unwanted text to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
