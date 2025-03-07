@@ -7,14 +7,17 @@ WORKDIR /bot
 # Install system dependencies needed for tgcrypto
 RUN apt-get update && apt-get install -y gcc python3-dev
 
-# Copy bot code and requirements file
-COPY bot.py requirements.txt ./
+# Copy bot files, requirements file, and the run script
+COPY bot.py bot2.py requirements.txt run.sh ./
 
 # Install required Python packages
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose port 8000 for the health check endpoint
-EXPOSE 8000
+# Make run.sh executable
+RUN chmod +x run.sh
 
-# Set the default command to run the bot
-CMD ["python", "bot.py"]
+# Expose ports for health check endpoints (8000 for bot.py and 8001 for bot2)
+EXPOSE 8000 8001
+
+# Set the default command to run both bots concurrently
+CMD ["./run.sh"]
