@@ -65,13 +65,10 @@ def to_math_sans_plain(text: str) -> str:
     result = []
     for ch in text:
         if 'A' <= ch <= 'Z':
-            # Mathematical Sans‑Serif Uppercase: U+1D5A0 to U+1D5B9
             result.append(chr(ord(ch) - ord('A') + 0x1D5A0))
         elif 'a' <= ch <= 'z':
-            # Mathematical Sans‑Serif Lowercase: U+1D5BA to U+1D5D3
             result.append(chr(ord(ch) - ord('a') + 0x1D5BA))
         elif '0' <= ch <= '9':
-            # Mathematical Sans‑Serif Digits: U+1D7E2 to U+1D7EB
             result.append(chr(ord(ch) - ord('0') + 0x1D7E2))
         else:
             result.append(ch)
@@ -98,7 +95,7 @@ def remove_unwanted_sentences(text: str) -> str:
         "Batch » Maths Spl-30 (Pre+Mains)",
         "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
         "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
-        "»Download By➵ᴹᴿ°ꜱᴀᴄʜɪɴ🌙࿐⁰³",
+        "»Download By➵ᴹᴿ°ꜱᴀᴄʜ𝖎𝖓🌙࿐⁰³",
         "By » Gagan Pratap Sir (Careerwill)",
         "By » Gagan Pratap Sir",
         "•"
@@ -119,21 +116,24 @@ def clean_prefix(prefix: str) -> str:
 
 # ------------------------------------------------------------------------------
 # Process caption:
-#   - If "Class Date" is found: split into prefix (before) and suffix (from "Class Date" onward).
+#   - If "Class Date »" is found: split into prefix (before) and suffix (from "Class Date »" onward).
+#     * Remove the marker "Class Date »" from the caption.
 #     * Force suffix to one line.
 #     * Convert suffix to Mathematical Sans‑Serif Plain.
 #     * Prepend numbering (in square brackets) to suffix and wrap in blockquote.
 #     * Append the cleaned prefix (unchanged) below.
-#   - If "Class Date" is not found: blockquote only the numbering (converted) and then append
+#   - If "Class Date »" is not found: blockquote only the numbering and then append
 #     the rest of the cleaned caption unchanged.
 # ------------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
     cleaned_text = remove_unwanted_sentences(text)
     lower_text = cleaned_text.lower()
-    idx = lower_text.find("class date")
+    marker = "class date »"  # marker to detect (case-insensitive)
+    idx = lower_text.find(marker)
     if idx != -1:
         prefix = cleaned_text[:idx].strip()
-        suffix = cleaned_text[idx:].strip()
+        # Remove the marker by starting after its length
+        suffix = cleaned_text[idx + len(marker):].strip()
         suffix_one_line = ' '.join(suffix.split())
         converted_suffix = to_math_sans_plain(suffix_one_line)
         block_text = f"[{numbering}] {converted_suffix}"
@@ -142,7 +142,6 @@ def process_caption(text: str, numbering: str) -> str:
         return f"{blockquoted}\n{clean_pref}"
     else:
         blockquoted = blockquote(f"[{numbering}]")
-        # Leave the rest of the cleaned text unchanged (do not convert to Unicode)
         return f"{blockquoted}\n{cleaned_text}"
 
 # ------------------------------------------------------------------------------
@@ -185,15 +184,15 @@ async def handle_media(client, message: Message):
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome!</b>\n"
-        "This bot automatically numbers video file captions and processes text starting from the keyword \"Class Date\". "
-        "If the caption contains \"Class Date\", the text from that point is forced onto one line, converted into non-bold, non-italic Mathematical Sans‑Serif Plain style, and prepended with a numbering prefix (in square brackets) wrapped in a blockquote. "
-        "Any text before \"Class Date\" is appended below the blockquote. "
-        "If \"Class Date\" is not found, only the numbering is blockquoted and converted, while the rest of the caption remains unchanged. "
+        "This bot automatically numbers video file captions and processes text starting from the keyword \"Class Date »\". "
+        "If the caption contains \"Class Date »\", the text from that point is forced onto one line, converted into non‑bold, non‑italic Mathematical Sans‑Serif Plain style, and prepended with a numbering prefix (in square brackets) wrapped in a blockquote. "
+        "Any text before \"Class Date »\" is appended below the blockquote. "
+        "If \"Class Date »\" is not found, only the numbering is blockquoted and converted, while the rest of the caption remains unchanged. "
         "For PDF files, the caption is removed entirely.\n\n"
         "<b>Commands:</b>\n"
         "• <code>/reset</code> - Reset numbering to " + format_number(1) + "\n"
         "• <code>/set &lt;number&gt;</code> - Set numbering starting from a custom number (e.g. <code>/set 051</code>)\n"
-        "• Send a video file with a caption containing \"Class Date\" or a PDF file to see the processing in action."
+        "• Send a video file with a caption containing \"Class Date »\" to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
 
