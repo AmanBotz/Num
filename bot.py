@@ -96,6 +96,7 @@ def remove_unwanted_sentences(text: str) -> str:
         "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
         "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
         "»Download By➵ᴹᴿ°ꜱᴀᴄʜ𝖎𝖓🌙࿐⁰³",
+        "»Download By➵ᴹᴿ°sachin🌙࿐⁰³",
         "By » Gagan Pratap Sir (Careerwill)",
         "By » Gagan Pratap Sir",
         "•"
@@ -118,6 +119,7 @@ def clean_prefix(prefix: str) -> str:
 # Process caption:
 #   - If "Class Date »" is found: split into prefix (before) and suffix (from "Class Date »" onward).
 #     * Remove the marker "Class Date »" from the caption.
+#     * Also remove "31 October 2024" from the suffix if present.
 #     * Force suffix to one line.
 #     * Convert suffix to Mathematical Sans‑Serif Plain.
 #     * Prepend numbering (in square brackets) to suffix and wrap in blockquote.
@@ -132,8 +134,9 @@ def process_caption(text: str, numbering: str) -> str:
     idx = lower_text.find(marker)
     if idx != -1:
         prefix = cleaned_text[:idx].strip()
-        # Remove the marker by starting after its length
         suffix = cleaned_text[idx + len(marker):].strip()
+        # Remove the date "31 October 2024" if present in the suffix
+        suffix = suffix.replace("31 October 2024", "").strip()
         suffix_one_line = ' '.join(suffix.split())
         converted_suffix = to_math_sans_plain(suffix_one_line)
         block_text = f"[{numbering}] {converted_suffix}"
@@ -187,6 +190,7 @@ async def start(client, message: Message):
         "This bot automatically numbers video file captions and processes text starting from the keyword \"Class Date »\". "
         "If the caption contains \"Class Date »\", the text from that point is forced onto one line, converted into non‑bold, non‑italic Mathematical Sans‑Serif Plain style, and prepended with a numbering prefix (in square brackets) wrapped in a blockquote. "
         "Any text before \"Class Date »\" is appended below the blockquote. "
+        "Additionally, if the text \"31 October 2024\" appears after the marker, it will be removed. "
         "If \"Class Date »\" is not found, only the numbering is blockquoted and converted, while the rest of the caption remains unchanged. "
         "For PDF files, the caption is removed entirely.\n\n"
         "<b>Commands:</b>\n"
