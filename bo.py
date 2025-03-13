@@ -82,24 +82,28 @@ def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ------------------------------------------------------------------------------
-# Clean extracted text to include only alphabets and spaces.
+# Clean extracted text:
+# - Remove the phrases "ATM Batch" and "Atm Maths" (case-insensitive)
+# - Remove any non-letter characters (keeping spaces)
+# - Normalize whitespace.
 # ------------------------------------------------------------------------------
 def clean_extracted_text(text: str) -> str:
-    # Remove any character that is not A-Z, a-z or whitespace.
+    # Remove unwanted phrases (case-insensitive)
+    text = re.sub(r"(?i)\bATM Batch\b", "", text)
+    text = re.sub(r"(?i)\bAtm Maths\b", "", text)
+    # Remove any character that is not an alphabet letter or whitespace.
     cleaned = re.sub(r"[^A-Za-z\s]", "", text)
-    # Normalize whitespace
     return " ".join(cleaned.split())
 
 # ------------------------------------------------------------------------------
 # Process caption for the new format:
 #
-# - Find the first occurrence of "Title:" (case-insensitive).
-# - Then find the first occurrence of "Class" (case-insensitive) after "Title:".
-# - Extract the text between "Title:" and "Class" for blockquoting.
-#   (Clean it so that only alphabets and spaces remain.)
-# - Extract the text from "Class" up to the marker "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" (this remains as-is).
-# - The final caption consists of the blockquote (with numbering and cleaned text) on one line,
-#   followed by the text from "Class" to the marker on the next line.
+# - Find the first occurrence of "Title:" (case-insensitive)
+# - Then find the first occurrence of "Class" (case-insensitive) after "Title:"
+# - Extract text between "Title:" and "Class" and clean it.
+# - Extract text from "Class" up to the marker "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" (unchanged).
+# - Return a caption where the cleaned text (with numbering) is wrapped in a blockquote,
+#   followed by the remaining text.
 # ------------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
     lower_text = text.lower()
@@ -107,20 +111,20 @@ def process_caption(text: str, numbering: str) -> str:
     idx_class = lower_text.find("class", idx_title)
     idx_marker = text.find("➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³", idx_class)
     if idx_title != -1 and idx_class != -1 and idx_marker != -1:
-        # Extract and clean text between "Title:" and "Class"
+        # Extract text between "Title:" and "Class"
         text_for_block = text[idx_title + len("title:"): idx_class].strip()
         cleaned_text = clean_extracted_text(text_for_block)
-        # Extract text from "Class" up to the marker (keep it as-is)
+        # Extract text from "Class" up to the marker
         text_after_block = text[idx_class: idx_marker].strip()
         return blockquote(f"[{numbering}] {cleaned_text}") + "\n" + text_after_block
     else:
-        # Fallback: if markers not found, prepend numbering to entire caption.
+        # Fallback: if markers not found, prepend numbering to the whole caption.
         return blockquote(f"[{numbering}]") + "\n" + text.strip()
 
 # ------------------------------------------------------------------------------
 # Handler for media messages:
-#   - Process caption for video files.
-#   - For PDF files, remove the caption entirely.
+# - Process caption for video files.
+# - For PDF files, remove the caption entirely.
 # ------------------------------------------------------------------------------
 @bot.on_message(filters.media)
 async def handle_media(client, message: Message):
@@ -156,8 +160,9 @@ async def start(client, message: Message):
     instructions = (
         "<b>Welcome!</b>\n"
         "This bot processes captions as follows:\n"
-        "• It extracts the text between 'Title:' and 'Class', cleans it so that only alphabets and spaces remain,\n"
-        "  and wraps that part (with numbering) in a blockquote (which closes before 'Class').\n"
+        "• It extracts the text between 'Title:' and 'Class', cleans it so that only alphabets and spaces remain, "
+        "removing 'ATM Batch' and 'Atm Maths'.\n"
+        "  This cleaned portion, with sequential numbering, is wrapped in a blockquote.\n"
         "• It then appends the text from 'Class' up to the marker '➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³' as-is.\n"
         "Send a video file with a caption in this format to see the processing in action."
     )
