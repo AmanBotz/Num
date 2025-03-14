@@ -1,5 +1,4 @@
 import os
-import re
 import asyncio
 from threading import Thread
 from pyrogram import Client, filters, enums
@@ -19,7 +18,7 @@ if not API_ID or not API_HASH or not BOT_TOKEN:
 # ------------------------------------------------------------------------------
 # Initialize the Pyrogram bot client
 # ------------------------------------------------------------------------------
-bot = Client("file_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
+bot = Client("indian_geography_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
 # ------------------------------------------------------------------------------
 # Initialize Flask for the health check endpoint
@@ -40,7 +39,7 @@ flask_thread.start()
 # ------------------------------------------------------------------------------
 # Persistent numbering state
 # ------------------------------------------------------------------------------
-NUMBERING_FILE = "numbering_state.txt"
+NUMBERING_FILE = "numbering_state_indian_geography.txt"
 
 def load_number():
     if os.path.exists(NUMBERING_FILE):
@@ -59,7 +58,7 @@ current_number = load_number()
 number_lock = asyncio.Lock()
 
 # ------------------------------------------------------------------------------
-# Convert text to Mathematical Sans‑Serif Plain (non bold, non italic) for numbering
+# Convert text to Mathematical Sans‑Serif Plain (for numbering)
 # ------------------------------------------------------------------------------
 def to_math_sans_plain(text: str) -> str:
     result = []
@@ -82,51 +81,30 @@ def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ------------------------------------------------------------------------------
-# Clean extracted text:
-# - Remove unwanted phrases "ATM Batch" and "Atm Maths" (case-insensitive)
-# - Remove any non-alphabet characters (keeping spaces)
-# - Normalize whitespace.
-# ------------------------------------------------------------------------------
-def clean_extracted_text(text: str) -> str:
-    text = re.sub(r"(?i)\bATM Batch\b", "", text)
-    text = re.sub(r"(?i)\bAtm Maths\b", "", text)
-    cleaned = re.sub(r"[^A-Za-z\s]", "", text)
-    return " ".join(cleaned.split())
-
-# ------------------------------------------------------------------------------
-# Process caption for the new format:
+# Process caption for Indian Geography format:
 #
-# - Find "Title:" (case-insensitive)
-# - Then find the first closing parenthesis ")" after "Title:".
-# - Then find the delimiter "||" after the ")".
-# - Then find the final marker "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" after "||".
+# Expected structure in the caption:
+#   ... Indian Geography- <non-blockquoted text> ➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³ ...
 #
-# The blockquoted part is the cleaned text between ")" and "||" (excluding both).
-# The non-blockquoted part is the text from after "||" up to the final marker.
+# The bot extracts:
+#   - The fixed text "Indian Geography" for blockquoting (with numbering).
+#   - The text between "Indian Geography-" and "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" for non-blockquoting.
 # ------------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
     lower_text = text.lower()
-    idx_title = lower_text.find("title:")
-    if idx_title == -1:
+    start_marker = "indian geography-"
+    end_marker = "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³"
+    idx_start = lower_text.find(start_marker)
+    idx_end = text.find(end_marker, idx_start)
+    if idx_start != -1 and idx_end != -1:
+        # Fixed blockquoted part is always "Indian Geography" with numbering.
+        block_text = f"[{numbering}] Indian Geography"
+        # Extract text after the dash and before the final marker.
+        content_text = text[idx_start + len(start_marker): idx_end].strip()
+        return blockquote(block_text) + "\n" + content_text
+    else:
+        # Fallback: if markers are not found, simply prepend numbering.
         return blockquote(f"[{numbering}]") + "\n" + text.strip()
-    idx_closeParen = text.find(")", idx_title)
-    if idx_closeParen == -1:
-        return blockquote(f"[{numbering}]") + "\n" + text.strip()
-    idx_delim = text.find("||", idx_closeParen)
-    if idx_delim == -1:
-        return blockquote(f"[{numbering}]") + "\n" + text.strip()
-    idx_marker = text.find("➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³", idx_delim)
-    if idx_marker == -1:
-        return blockquote(f"[{numbering}]") + "\n" + text.strip()
-    
-    # Extract text between ")" and "||" for blockquoting.
-    block_text = text[idx_closeParen + 1: idx_delim].strip()
-    cleaned_text = clean_extracted_text(block_text)
-    
-    # Extract text from after "||" up to the final marker.
-    non_block_text = text[idx_delim + len("||"): idx_marker].strip()
-    
-    return blockquote(f"[{numbering}] {cleaned_text}") + "\n" + non_block_text
 
 # ------------------------------------------------------------------------------
 # Handler for media messages:
@@ -164,11 +142,16 @@ async def handle_media(client, message: Message):
 @bot.on_message(filters.command("start"))
 async def start(client, message: Message):
     instructions = (
-        "<b>Welcome!</b>\n"
-        "This bot processes captions with the following structure:\n"
-        "• The caption contains a 'Title:' line. After 'Title:', there is a closing parenthesis \")\".\n"
-        "• Following the \")\", the text up to the delimiter '||' is extracted, cleaned (removing non-alphabet characters and the phrases 'ATM Batch' and 'Atm Maths'), and used for blockquoting with numbering.\n"
-        "• The text from after '||' up to the marker '➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³' is appended as plain text.\n"
+        "<b>Welcome to the Indian Geography Caption Bot!</b>\n"
+        "This bot processes captions that follow this format:\n\n"
+        "   ... Indian Geography- <i>your content here</i> ➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³ ...\n\n"
+        "It extracts the text between the dash (-) after 'Indian Geography' and the marker '➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³',\n"
+        "and uses 'Indian Geography' (with sequential numbering) in a blockquote, while appending the extracted content as plain text.\n\n"
+        "For example, a caption like:\n"
+        "   Indian Geography- Details about India’s rivers and mountains. ➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³\n\n"
+        "will be converted to:\n"
+        "   <blockquote>[001] Indian Geography</blockquote>\n"
+        "   Details about India’s rivers and mountains.\n\n"
         "Send a video file with a caption in this format to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
