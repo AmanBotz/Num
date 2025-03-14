@@ -84,7 +84,7 @@ def blockquote(text: str) -> str:
 # ------------------------------------------------------------------------------
 # Clean extracted text:
 # - Remove unwanted phrases "ATM Batch" and "Atm Maths" (case-insensitive)
-# - Remove any character that is not an alphabet or whitespace.
+# - Remove any non-alphabet characters (keeping spaces)
 # - Normalize whitespace.
 # ------------------------------------------------------------------------------
 def clean_extracted_text(text: str) -> str:
@@ -96,35 +96,37 @@ def clean_extracted_text(text: str) -> str:
 # ------------------------------------------------------------------------------
 # Process caption for the new format:
 #
-# - Find the first occurrence of "Title:" (case-insensitive).
-# - Then try to find the first occurrence of "Class" (case-insensitive) after "Title:".
-#   If not found, use the first closing ")" after "Title:" as the delimiter.
-# - Extract text between "Title:" and the chosen delimiter, clean it, and wrap it (with numbering) in a blockquote.
-# - Extract text from the delimiter up to the marker "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" unchanged.
-# - If the delimiter was a ")", remove its leading ")" from the remaining text.
+# - Find "Title:" (case-insensitive)
+# - Then find the first closing parenthesis ")" after "Title:".
+# - Then find the delimiter "||" after the ")".
+# - Then find the final marker "➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³" after "||".
+#
+# The blockquoted part is the cleaned text between ")" and "||" (excluding both).
+# The non-blockquoted part is the text from after "||" up to the final marker.
 # ------------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
     lower_text = text.lower()
     idx_title = lower_text.find("title:")
-    idx_delim = lower_text.find("class", idx_title)
-    used_class = True
-    if idx_delim == -1:
-        idx_delim = text.find(")", idx_title)
-        used_class = False
-    idx_marker = text.find("➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³", idx_delim)
-    
-    if idx_title != -1 and idx_delim != -1 and idx_marker != -1:
-        # Extract and clean text for blockquote
-        text_for_block = text[idx_title + len("title:"): idx_delim].strip()
-        cleaned_text = clean_extracted_text(text_for_block)
-        # Extract remaining text from the delimiter to the marker
-        text_after_block = text[idx_delim: idx_marker].strip()
-        # If we used a closing parenthesis as delimiter, remove a leading ")" if present
-        if not used_class:
-            text_after_block = text_after_block.lstrip(")").strip()
-        return blockquote(f"[{numbering}] {cleaned_text}") + "\n" + text_after_block
-    else:
+    if idx_title == -1:
         return blockquote(f"[{numbering}]") + "\n" + text.strip()
+    idx_closeParen = text.find(")", idx_title)
+    if idx_closeParen == -1:
+        return blockquote(f"[{numbering}]") + "\n" + text.strip()
+    idx_delim = text.find("||", idx_closeParen)
+    if idx_delim == -1:
+        return blockquote(f"[{numbering}]") + "\n" + text.strip()
+    idx_marker = text.find("➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³", idx_delim)
+    if idx_marker == -1:
+        return blockquote(f"[{numbering}]") + "\n" + text.strip()
+    
+    # Extract text between ")" and "||" for blockquoting.
+    block_text = text[idx_closeParen + 1: idx_delim].strip()
+    cleaned_text = clean_extracted_text(block_text)
+    
+    # Extract text from after "||" up to the final marker.
+    non_block_text = text[idx_delim + len("||"): idx_marker].strip()
+    
+    return blockquote(f"[{numbering}] {cleaned_text}") + "\n" + non_block_text
 
 # ------------------------------------------------------------------------------
 # Handler for media messages:
@@ -134,7 +136,6 @@ def process_caption(text: str, numbering: str) -> str:
 @bot.on_message(filters.media)
 async def handle_media(client, message: Message):
     global current_number
-
     if message.video:
         async with number_lock:
             num = current_number
@@ -164,10 +165,10 @@ async def handle_media(client, message: Message):
 async def start(client, message: Message):
     instructions = (
         "<b>Welcome!</b>\n"
-        "This bot processes captions as follows:\n"
-        "• It extracts the text between 'Title:' and either 'Class' (if present) or the first ')' (if 'Class' is not found),\n"
-        "  cleans it (removing non-alphabets and the phrases 'ATM Batch' and 'Atm Maths'), and wraps it in a blockquote with numbering.\n"
-        "• It then appends the text from the delimiter up to the marker '➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³' as-is.\n"
+        "This bot processes captions with the following structure:\n"
+        "• The caption contains a 'Title:' line. After 'Title:', there is a closing parenthesis \")\".\n"
+        "• Following the \")\", the text up to the delimiter '||' is extracted, cleaned (removing non-alphabet characters and the phrases 'ATM Batch' and 'Atm Maths'), and used for blockquoting with numbering.\n"
+        "• The text from after '||' up to the marker '➸ᴹᴿ°ℂr‌𝕒c‌k‌єr࿐⁰³' is appended as plain text.\n"
         "Send a video file with a caption in this format to see the processing in action."
     )
     await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
