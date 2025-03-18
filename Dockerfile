@@ -8,7 +8,7 @@ WORKDIR /bot
 RUN apt-get update && apt-get install -y gcc python3-dev
 
 # Copy the main bot file and requirements file into the container
-COPY bo.py requirements.txt ./
+COPY bot.py requirements.txt ./
 
 # Install required Python packages
 RUN pip install --no-cache-dir -r requirements.txt
@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # Set the default command to run the bot
-CMD ["python", "bo.py"]
+CMD ["python", "bot.py"]
