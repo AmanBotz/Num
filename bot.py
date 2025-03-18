@@ -17,7 +17,7 @@ download_lock = asyncio.Lock()
 progress_last_update = {}
 # Dictionary to store user-specific cookies file paths.
 user_cookies = {}
-# Dictionary to map unique tokens to download requests (to keep callback data short).
+# Dictionary to map unique tokens to download request details.
 download_requests = {}
 
 # Provided API credentials (API_ID as integer)
@@ -50,7 +50,7 @@ def run_health_server():
 # Utility Functions
 # ---------------------------
 def check_disk_space(required_bytes):
-    """Check if available disk space is at least required_bytes."""
+    """Return True if free disk space is at least required_bytes."""
     total, used, free = shutil.disk_usage("/")
     return free >= required_bytes
 
@@ -76,7 +76,7 @@ def progress_callback(current, total, message, action="Downloading"):
         asyncio.create_task(message.edit_text(f"{action}... {bar} {percent:.2f}%", parse_mode=ParseMode.HTML))
 
 def get_formats(url, cookie_file=None):
-    """Extract video/audio formats using yt-dlp, optionally using a cookies file."""
+    """Extract available formats using yt-dlp, optionally using a cookies file."""
     ydl_opts = {
         'skip_download': True,
         'quiet': True,
@@ -115,7 +115,7 @@ async def start(client, message):
     await message.reply_text(
         "Welcome to the yt-dlp Bot 🤖!<br>"
         "Use <b>/dl &lt;URL&gt;</b> to download a video from any supported site.<br>"
-        "You can set your own cookies with <b>/setcookies</b> if needed, otherwise the default cookies will be used.",
+        "You can set your own cookies with <b>/setcookies</b> if needed; otherwise, the default cookies will be used.",
         parse_mode=ParseMode.HTML
     )
 
@@ -123,7 +123,7 @@ async def start(client, message):
 async def set_cookies(client, message):
     user_id = message.from_user.id
     if len(message.command) > 1:
-        # Use text provided after the command as cookie content.
+        # Use the text after the command as cookie content.
         cookie_text = message.text.split(None, 1)[1]
         if not os.path.exists("cookies"):
             os.makedirs("cookies")
@@ -133,7 +133,6 @@ async def set_cookies(client, message):
         user_cookies[user_id] = cookie_file
         await message.reply_text("Your cookies have been set.", parse_mode=ParseMode.HTML)
     elif message.document:
-        # Download the attached document as cookie file.
         if not os.path.exists("cookies"):
             os.makedirs("cookies")
         file_path = await message.download(file_name=f"cookies/cookies_{user_id}.txt")
@@ -154,17 +153,17 @@ async def dl_command(client, message):
         return
 
     async with download_lock:
-        if not check_disk_space(100 * 1024 * 1024):  # Ensure at least 100MB free
+        if not check_disk_space(100 * 1024 * 1024):  # Require at least 100 MB free
             await message.reply_text("System busy with downloads. Please wait a moment ⏳.", parse_mode=ParseMode.HTML)
             return
 
-    # Determine which cookie file to use: user-specific if set, otherwise default.
+    # Determine cookie file: use user-specific if set, else default.
     cookie_file = user_cookies.get(message.from_user.id, DEFAULT_COOKIE_FILE)
     result, error = get_formats(url, cookie_file=cookie_file)
     if error:
         if "login" in error.lower() or "authorization" in error.lower():
             await message.reply_text(
-                "This URL requires login or authorization. Please set your cookies with /setcookies or provide a valid URL.",
+                "This URL requires login/authorization. Please set your cookies with /setcookies or provide a valid URL.",
                 parse_mode=ParseMode.HTML
             )
         else:
@@ -174,11 +173,14 @@ async def dl_command(client, message):
     formats = result["formats"]
     title = result["title"]
 
-    # Build inline buttons for each available format (each button stores a unique token).
+    # Limit to first 10 formats to keep callback data small.
+    if len(formats) > 10:
+        formats = formats[:10]
+
+    # Build inline buttons for each format using a unique token.
     buttons = []
     for fmt in formats:
         token = uuid.uuid4().hex
-        # Save necessary data for the callback.
         download_requests[token] = {
             "format_id": fmt["format_id"],
             "url": url,
@@ -208,8 +210,7 @@ async def download_format(client, callback_query):
     cookie_file = req["cookie_file"]
 
     await callback_query.answer("Download started.")
-    progress_message = await callback_query.message.reply_text("Starting download... ⏳",
-                                                                 parse_mode=ParseMode.HTML)
+    progress_message = await callback_query.message.reply_text("Starting download... ⏳", parse_mode=ParseMode.HTML)
 
     async with download_lock:
         out_template = "downloads/%(id)s.%(ext)s"
@@ -233,7 +234,6 @@ async def download_format(client, callback_query):
             return
 
     file_path = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
-    # Process media: extract duration and generate thumbnail using ffmpeg.
     try:
         probe = ffmpeg.probe(file_path)
         duration = float(probe["format"]["duration"])
@@ -289,7 +289,7 @@ if __name__ == "__main__":
         os.makedirs("downloads")
     if not os.path.exists("cookies"):
         os.makedirs("cookies")
-    # Start health check server in a separate thread so Koyeb's TCP check on port 8000 passes.
+    # Start health check server in a separate thread (for Koyeb's TCP health check on port 8000).
     health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
     app.run()
