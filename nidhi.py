@@ -16,7 +16,7 @@ bot = Client("file_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
 # Flask health check
 health_app = Flask(__name__)
-@health_app.route('/health')
+@health_app.route('/')
 def health_check(): return "OK", 200
 Thread(target=lambda: health_app.run(port=8000, host="0.0.0.0"), daemon=True).start()
 
