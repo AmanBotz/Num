@@ -8,7 +8,7 @@ WORKDIR /bot
 RUN apt-get update && apt-get install -y gcc python3-dev
 
 # Copy the main bot file and requirements file into the container
-COPY bot.py requirements.txt ./
+COPY . .
 
 # Install required Python packages
 RUN pip install --no-cache-dir -r requirements.txt
