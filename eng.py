@@ -5,11 +5,11 @@ from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from flask import Flask
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Load configuration from environment variables
+#Load configuration from environment variables
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
@@ -18,19 +18,19 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 if not API_ID or not API_HASH or not BOT_TOKEN:
 raise ValueError("❌ API_ID, API_HASH, or BOT_TOKEN is missing! Set them in your environment variables.")
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Initialize the Pyrogram bot client
+#Initialize the Pyrogram bot client
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 bot = Client("indian_geography_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Initialize Flask for the health check endpoint
+#Initialize Flask for the health check endpoint
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 health_app = Flask(name)
 
@@ -45,11 +45,11 @@ flask_thread = Thread(target=run_flask)
 flask_thread.daemon = True
 flask_thread.start()
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Persistent numbering state
+#Persistent numbering state
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 NUMBERING_FILE = "numbering_state_indian_geography.txt"
 
@@ -69,11 +69,11 @@ f.write(str(number))
 current_number = load_number()
 number_lock = asyncio.Lock()
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Convert text to Mathematical Sans-Serif Plain (for numbering)
+#Convert text to Mathematical Sans-Serif Plain (for numbering)
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 def to_math_sans_plain(text: str) -> str:
 result = []
@@ -95,17 +95,17 @@ return to_math_sans_plain(num_str)
 def blockquote(text: str) -> str:
 return f"<blockquote>{text}</blockquote>"
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Process caption for modified requirements:
+#Process caption for modified requirements:
 
-- Blockquote only "Class [NNN]" where NNN is the first sequence of digits.
+#- Blockquote only "Class [NNN]" where NNN is the first sequence of digits.
 
-- After blockquoting, detect and skip the second sequence of digits if present.
+#- After blockquoting, detect and skip the second sequence of digits if present.
 
-- Extract text before the marker 'ᒪᑭᖇᑭᗪᐯ' and drop everything else.
+#- Extract text before the marker 'ᒪᑭᖇᑭᗪᐯ' and drop everything else.
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 def process_caption(text: str, numbering: str) -> str:
 import re
@@ -127,15 +127,15 @@ if cleaned:
 else:  
     return quote
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Handler for media messages:
+#Handler for media messages:
 
-- Process caption for video files using updated logic.
+#- Process caption for video files using updated logic.
 
-- For PDF files, remove the caption entirely.
+#- For PDF files, remove the caption entirely.
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 @bot.on_message(filters.media)
 async def handle_media(client, message: Message):
@@ -162,11 +162,11 @@ await message.reply_document(message.document.file_id, caption="", parse_mode=en
 else:
 pass
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-/start, /reset, /set commands remain unchanged
+#/start, /reset, /set commands remain unchanged
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 @bot.on_message(filters.command("start"))
 async def start(client, message: Message):
@@ -205,11 +205,11 @@ await message.reply("✅ Numbering set to " + format_number(current_number), par
 except Exception:
 await message.reply("❌ <b>Usage:</b> <code>/set <number></code>\nExample: <code>/set 051</code>", parse_mode=enums.ParseMode.HTML)
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
-Start the bot
+#Start the bot
 
-------------------------------------------------------------------------------
+#------------------------------------------------------------------------------
 
 bot.run()
 
