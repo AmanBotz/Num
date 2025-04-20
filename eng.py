@@ -18,22 +18,22 @@ current_number = 1
 number_lock = asyncio.Lock()
 
 def convert_to_math_sans(text):
-    sans_text = []
-    for char in text:
-        if 'A' <= char <= 'Z':
-            sans_text.append(chr(0x1D5A0 + ord(char) - ord('A')))
-        elif 'a' <= char <= 'z':
-            sans_text.append(chr(0x1D5BA + ord(char) - ord('a')))
-        elif '0' <= char <= '9':
-            sans_text.append(chr(0x1D7E2 + ord(char) - ord('0')))
-        else:
-            sans_text.append(char)
-    return ''.join(sans_text)
+    sans_map = {
+        **{chr(i): chr(0x1D5A0 + i - 65) for i in range(65, 91)},
+        **{chr(i): chr(0x1D5BA + i - 97) for i in range(97, 123)},
+        **{chr(i): chr(0x1D7E2 + i - 48) for i in range(48, 58)}
+    }
+    return ''.join(sans_map.get(c, c) for c in text)
 
 def process_content(original):
     marker = 'ᒪᑭᖇᑭᗪᐯ'
-    content = original.split(marker, 1)[0]
-    return re.sub(r'\d+', '', content).strip()
+    content_part = original.split(marker, 1)[0]
+    
+    numbers = list(re.finditer(r'\d+', content_part))
+    if len(numbers) >= 2:
+        content_part = content_part[numbers[1].end():]
+    
+    return re.sub(r'\d+', '', content_part).strip()
 
 @health_app.route('/')
 def health_check():
@@ -69,8 +69,8 @@ async def media_handler(_, m):
         new_caption = ""
         if m.video:
             base = convert_to_math_sans(f"Class [{num:03}]")
-            content = process_content(m.caption or "")
-            new_caption = f"<blockquote>{base}</blockquote>\n{content}"
+            processed = process_content(m.caption or "")
+            new_caption = f"<blockquote>{base}</blockquote>\n{processed}"
 
         try:
             await m.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
