@@ -1,181 +1,138 @@
 import os
-import asyncio
 import re
+import asyncio
 from threading import Thread
 from pyrogram import Client, filters, enums
 from pyrogram.types import Message
 from flask import Flask
 
-# ------------------------------------------------------------------------------
-# Load configuration from environment variables
-# ------------------------------------------------------------------------------
-
+# ---------------------------- Configuration ---------------------------- #
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
 if not API_ID or not API_HASH or not BOT_TOKEN:
-    raise ValueError("❌ API_ID, API_HASH, or BOT_TOKEN is missing! Set them in your environment variables.")
+    raise ValueError("Missing API credentials!")
 
-# ------------------------------------------------------------------------------
-# Initialize the Pyrogram bot client
-# ------------------------------------------------------------------------------
+# ---------------------------- Bot Initialization ---------------------------- #
+bot = Client("caption_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-bot = Client("indian_geography_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
-
-# ------------------------------------------------------------------------------
-# Initialize Flask for the health check endpoint
-# ------------------------------------------------------------------------------
-
+# ---------------------------- Health Check Server ---------------------------- #
 health_app = Flask(__name__)
 
-@health_app.route('/')
+@health_app.route('/health')
 def health_check():
     return "OK", 200
 
-def run_flask():
-    health_app.run(port=8000, host="0.0.0.0")
-
-flask_thread = Thread(target=run_flask)
-flask_thread.daemon = True
+flask_thread = Thread(target=lambda: health_app.run(port=8000, host="0.0.0.0"), daemon=True)
 flask_thread.start()
 
-# ------------------------------------------------------------------------------
-# Persistent numbering state
-# ------------------------------------------------------------------------------
-
-NUMBERING_FILE = "numbering_state_indian_geography.txt"
-
-def load_number():
-    if os.path.exists(NUMBERING_FILE):
-        try:
-            with open(NUMBERING_FILE, "r") as f:
-                return int(f.read().strip())
-        except Exception:
-            return 1
-    return 1
-
-def save_number(number):
-    with open(NUMBERING_FILE, "w") as f:
-        f.write(str(number))
-
-current_number = load_number()
+# ---------------------------- Numbering System ---------------------------- #
+NUMBER_FILE = "number_state.txt"
+current_number = 1
 number_lock = asyncio.Lock()
 
-# ------------------------------------------------------------------------------
-# Text formatting utilities
-# ------------------------------------------------------------------------------
+def load_number():
+    global current_number
+    try:
+        with open(NUMBER_FILE, "r") as f:
+            current_number = int(f.read().strip()) or 1
+    except:
+        current_number = 1
 
-def to_math_sans_plain(text: str) -> str:
-    result = []
-    for ch in text:
-        if 'A' <= ch <= 'Z':
-            result.append(chr(ord(ch) - ord('A') + 0x1D5A0))
-        elif 'a' <= ch <= 'z':
-            result.append(chr(ord(ch) - ord('a') + 0x1D5BA))
-        elif '0' <= ch <= '9':
-            result.append(chr(ord(ch) - ord('0') + 0x1D7E2))
-        else:
-            result.append(ch)
-    return ''.join(result)
+def save_number():
+    with open(NUMBER_FILE, "w") as f:
+        f.write(str(current_number))
 
+load_number()
+
+# ---------------------------- Text Formatting ---------------------------- #
 def format_number(num: int) -> str:
-    num_str = str(num).zfill(3)
-    return to_math_sans_plain(num_str)
+    """Convert number to Mathematical Sans-Serif"""
+    return ''.join([chr(0x1D7E2 + int(d)) for d in f"{num:03d}"])
 
 def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
-# ------------------------------------------------------------------------------
-# Caption processing logic
-# ------------------------------------------------------------------------------
+# ---------------------------- Caption Processing ---------------------------- #
+def process_caption(caption: str, numbering: str) -> str:
+    # Process Class section
+    class_pattern = re.compile(r"(Class:?[\s\S]*?)(?=Title:|$)", re.IGNORECASE)
+    class_match = class_pattern.search(caption)
+    if class_match:
+        class_text = class_match.group(1).strip()
+        updated_class = f"{class_text} [{numbering}]"
+        caption = caption.replace(class_text, updated_class, 1)
 
-def process_caption(text: str, numbering: str) -> str:
-    # 1. Blockquote "Class [NNN]"
-    class_block = f"Class [{numbering}]"
-    quote = blockquote(class_block)
+    # Process Title section
+    title_pattern = re.compile(r"Title:?([\s\S]*?)(?=➸|$)", re.IGNORECASE)
+    title_match = title_pattern.search(caption)
+    if title_match:
+        title_content = title_match.group(1).strip()
+        
+        # Remove everything after ᒪᑭᖇᑭᗪᐯ marker
+        title_content = re.split(r"ᒪᑭᖇᑭᗪᐯ", title_content, 1)[0].strip()
+        
+        # Remove all text up to second number including numbers
+        title_content = re.sub(r'^.*?\d+.*?\d+', '', title_content).strip()
+        
+        caption = caption.replace(title_match.group(0), f"Title: {title_content}")
 
-    # 2. Process text content
-    marker = 'ᒪᑭᖇᑭᗪᐯ'
-    truncated = text.split(marker, 1)[0]
-    cleaned = re.sub(r"\d+", "", truncated).strip()
-    
-    return f"{quote}\n{cleaned}" if cleaned else quote
+    # Add blockquotes to all numbering tags
+    caption = re.sub(
+        r"(\[.*?\])", 
+        lambda m: blockquote(m.group(1)), 
+        caption
+    )
 
-# ------------------------------------------------------------------------------
-# Message handlers
-# ------------------------------------------------------------------------------
+    return caption.strip()
 
-@bot.on_message(filters.media)
+# ---------------------------- Bot Handlers ---------------------------- #
+@bot.on_message(filters.media & filters.outgoing)
 async def handle_media(client, message: Message):
     global current_number
-    if message.video:
-        async with number_lock:
-            num = current_number
-            current_number += 1
-            save_number(current_number)
-            
-        orig_caption = message.caption or ""
-        numbering = format_number(num)
-        new_caption = process_caption(orig_caption, numbering)
-        
+    
+    async with number_lock:
+        num = current_number
+        current_number += 1
+        save_number()
+
+    formatted_number = format_number(num)
+    
+    if message.caption:
+        new_caption = process_caption(message.caption, formatted_number)
         try:
             await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
         except Exception as e:
-            print(f"Error editing caption: {e}")
-            await message.reply_video(
-                message.video.file_id,
-                caption=new_caption,
-                parse_mode=enums.ParseMode.HTML
-            )
-    elif message.document and message.document.mime_type == "application/pdf":
-        try:
-            await message.edit_caption("", parse_mode=enums.ParseMode.HTML)
-        except Exception as e:
-            print(f"Error editing caption for PDF: {e}")
-            await message.reply_document(
-                message.document.file_id,
-                caption="",
-                parse_mode=enums.ParseMode.HTML
-            )
+            print(f"Caption edit failed: {e}")
 
-@bot.on_message(filters.command("start"))
-async def start(client, message: Message):
-    instructions = (
-        "Welcome to the Indian Geography Caption Bot!\n"
-        "This bot now uses a modified caption logic:\n"
-        " • Blockquotes only the text 'Class [NNN]'.\n"
-        " • Strips all numbers.\n"
-        " • Keeps text only before the marker 'ᒪᑭᖇᑭᗪᐯ'.\n"
-        "Send a video with a caption containing digits and the marker to see it in action."
+@bot.on_message(filters.command(["start", "help"]))
+async def send_help(client, message: Message):
+    help_text = (
+        "<b>Caption Processing Bot</b>\n\n"
+        "Automatically formats captions with:\n"
+        "1. Auto-incrementing 3-digit Mathematical numbers\n"
+        "2. Class section numbering\n"
+        "3. Title section cleaning (removes up to 2nd number)\n"
+        "4. Automatic blockquote formatting\n\n"
+        "Send media with captions containing:\n"
+        "- Class: [Your class text]\n"
+        "- Title: [Your title text]\n"
+        "Numbers and formatting will be added automatically!"
     )
-    await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
+    await message.reply_text(help_text, parse_mode=enums.ParseMode.HTML)
 
-@bot.on_message(filters.command("reset"))
-async def reset(client, message: Message):
-    global current_number
-    async with number_lock:
-        current_number = 1
-        save_number(current_number)
-    await message.reply(f"✅ Numbering reset to {format_number(current_number)}", parse_mode=enums.ParseMode.HTML)
-
-@bot.on_message(filters.command("set"))
+@bot.on_message(filters.command("setnum"))
 async def set_number(client, message: Message):
-    global current_number
     try:
-        new_number = int(message.command[1])
-        if new_number < 1:
-            raise ValueError
+        new_num = int(message.command[1])
         async with number_lock:
-            current_number = new_number
-            save_number(current_number)
-        await message.reply(f"✅ Numbering set to {format_number(current_number)}", parse_mode=enums.ParseMode.HTML)
-    except (IndexError, ValueError):
-        await message.reply("❌ Usage: /set <number>\nExample: /set 051", parse_mode=enums.ParseMode.HTML)
+            global current_number
+            current_number = max(1, new_num)
+            save_number()
+        await message.reply(f"Number set to {format_number(current_number)}")
+    except:
+        await message.reply("Usage: /setnum [new_number]")
 
-# ------------------------------------------------------------------------------
-# Start the bot
-# ------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    bot.run()
+# ---------------------------- Main Execution ---------------------------- #
+bot.run()
