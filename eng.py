@@ -34,7 +34,7 @@ Initialize Flask for the health check endpoint
 
 health_app = Flask(name)
 
-@health_app.route('/health')
+@health_app.route('/')
 def health_check():
 return "OK", 200
 
@@ -71,7 +71,7 @@ number_lock = asyncio.Lock()
 
 ------------------------------------------------------------------------------
 
-Convert text to Mathematical Sans‑Serif Plain (for numbering)
+Convert text to Mathematical Sans-Serif Plain (for numbering)
 
 ------------------------------------------------------------------------------
 
@@ -113,15 +113,12 @@ import re
 class_block = f"Class [{numbering}]"
 quote = blockquote(class_block)
 
-# 2. Remove first number sequence (already used in blockquote) and second number sequence  
-#    We'll remove any standalone digits groups.  
-# 3. Keep text only before the specific marker.  
+# 2. Remove all number sequences  
 marker = 'ᒪᑭᖇᑭᗪᐯ'  
 # Truncate at marker if present  
 truncated = text.split(marker, 1)[0]  
-# Remove all digit groups (skip both first and any subsequent)  
+# Remove all digit groups  
 cleaned = re.sub(r"\d+", "", truncated)  
-# Strip whitespace  
 cleaned = cleaned.strip()  
 
 # Combine  
@@ -177,7 +174,7 @@ instructions = (
 "<b>Welcome to the Indian Geography Caption Bot!</b>\n"
 "This bot now uses a modified caption logic:\n"
 "  • Blockquotes only the text 'Class [NNN]'.\n"
-"  • Strips all numbers (first and second sequences).\n"
+"  • Strips all numbers.\n"
 "  • Keeps text only before the marker 'ᒪᑭᖇᑭᗪᐯ'.\n"
 "Send a video with a caption containing digits and the marker to see it in action."
 )
