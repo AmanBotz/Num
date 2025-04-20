@@ -24,7 +24,7 @@ Thread(target=lambda: app.run(host="0.0.0.0", port=8000), daemon=True).start()
 
 # ——— Persistent numbering ———
 STATE_FILE = "numbering_state.txt"
-_lock = asyncio.Lock()
+_number_lock = asyncio.Lock()
 
 def load_number() -> int:
     if os.path.exists(STATE_FILE):
@@ -33,6 +33,7 @@ def load_number() -> int:
         except:
             pass
     return 1
+
 
 def save_number(n: int):
     with open(STATE_FILE, "w") as f:
@@ -54,55 +55,69 @@ def to_math_sans_plain(text: str) -> str:
             out.append(ch)
     return "".join(out)
 
+
 def blockquote(txt: str) -> str:
     return f"<blockquote>{txt}</blockquote>"
 
 # ——— Caption processing ———
 def process_caption(raw: str, num: int) -> str:
     """
-    1) If contains "//", expects Title//Class[//Extra]:
-       – clean Title & Class to alphanum + spaces
-       – produce two blockquotes: [NNN] Title  and  [NNN] Class
-       – append any Extra text (untouched) on new line
-    2) Else (“other”):
-       – strip everything up through first digits (incl.)
-       – strip from 'ᒪᑭᖇᑭᗪᐯ' onward (incl.)
+    Handles two styles:
+    1) If caption contains '//', treat parts[0] as Title and parts[1] as Class:
+       – Title: clean out bullets and non-alphanumerics
+       – Class: strip everything before literal 'Class', remove after marker 'ᒪᑭᖇᑭᗪᐯ'
+       – Wrap each in a blockquote with [NNN] prefix in math-sans-serif
+       – Append extras as plain text if present
+    2) Otherwise, remove up through first digits, then drop from 'ᒪᑭᖇᑭᗪᐯ' onward
     """
     n_str = str(num).zfill(3)
     n_fmt = to_math_sans_plain(n_str)
-    
     parts = [p.strip() for p in raw.split("//")]
+
+    # Case 1: Title/Class style
     if len(parts) >= 2:
-        # clean function: remove bullets & non‑alnum except spaces
-        def clean(txt):
-            t = re.sub(r'\b\d+\.\s*', "", txt)
-            t = re.sub(r'[^A-Za-z0-9\s]', "", t)
-            return " ".join(t.split())
-        
-        title = clean(parts[0])
-        cls   = clean(parts[1])
-        extra = "//".join(parts[2:]).strip() if len(parts) > 2 else ""
-        
-        out = []
-        out.append(blockquote(f"[{n_fmt}] {to_math_sans_plain(title)}"))
-        out.append(blockquote(f"[{n_fmt}] {to_math_sans_plain(cls)}"))
-        if extra:
-            out.append(extra)
-        return "\n".join(out)
-    else:
-        # “other” caption
-        txt = raw
-        # remove up through first digits
-        txt = re.sub(r'^.*?\d+\s*', "", txt)
-        # cut off at the marker ᒪᑭᖇᑭᗪᐯ
-        txt = re.sub(r'ᒪᑭᖇᑭᗪᐯ.*', "", txt)
-        return txt.strip()
+        # Clean Title
+        title_raw = parts[0]
+        title_clean = re.sub(r"\b\d+\.\s*", "", title_raw)
+        title_clean = re.sub(r"[^A-Za-z0-9\s]", "", title_clean).strip()
+
+        # Extract Class segment
+        class_raw = parts[1]
+        idx = class_raw.find("Class")
+        class_seg = class_raw[idx:] if idx != -1 else class_raw
+        class_seg = re.sub(r"ᒪᑭᖇᑭᗪᐯ.*", "", class_seg, flags=re.DOTALL).strip()
+        class_clean = re.sub(r"[^A-Za-z0-9\s]", "", class_seg).strip()
+
+        # Convert text to math-sans
+        title_fmt = to_math_sans_plain(title_clean)
+        class_fmt = to_math_sans_plain(class_clean)
+
+        # Build output
+        out_lines = []
+        out_lines.append(blockquote(f"[{n_fmt}] {title_fmt}"))
+        out_lines.append(blockquote(f"[{n_fmt}] {class_fmt}"))
+
+        # Append any extra parts beyond the first two
+        if len(parts) > 2:
+            extras = "//".join(parts[2:]).strip()
+            if extras:
+                out_lines.append(extras)
+
+        return "\n".join(out_lines)
+
+    # Case 2: other captions
+    txt = raw
+    # Remove everything up to and including the first numeric sequence
+    txt = re.sub(r'^.*?\d+\s*', '', txt)
+    # Truncate at the special marker
+    txt = re.sub(r'ᒪᑭᖇᑭᗪᐯ.*', '', txt, flags=re.DOTALL)
+    return txt.strip()
 
 # ——— Handlers ———
 @bot.on_message(filters.media)
 async def on_media(_, message: Message):
     global current_number
-    # PDF: clear caption
+    # Clear PDF captions
     if message.document and message.document.mime_type == "application/pdf":
         try:
             await message.edit_caption("")
@@ -110,54 +125,47 @@ async def on_media(_, message: Message):
             pass
         return
 
-    # Only modify videos & photos/docs
+    # Only process videos, photos, and documents
     if message.video or message.photo or message.document:
-        async with _lock:
+        # Grab next number
+        async with _number_lock:
             num = current_number
             current_number += 1
             save_number(current_number)
 
-        new_cap = process_caption(message.caption or "", num)
+        # Generate new caption
+        new_caption = process_caption(message.caption or "", num)
         try:
-            await message.edit_caption(new_cap, parse_mode=enums.ParseMode.HTML)
+            await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
         except Exception:
-            # fallback: repost same media with new caption
+            # Fallback: repost media with new caption
+            media_id = None
             if message.video:
-                await message.reply_video(
-                    message.video.file_id,
-                    caption=new_cap,
-                    parse_mode=enums.ParseMode.HTML
-                )
+                media_id = message.video.file_id
+                await message.reply_video(media_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
             elif message.photo:
-                await message.reply_photo(
-                    message.photo.file_id,
-                    caption=new_cap,
-                    parse_mode=enums.ParseMode.HTML
-                )
+                media_id = message.photo.file_id
+                await message.reply_photo(media_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
             elif message.document:
-                await message.reply_document(
-                    message.document.file_id,
-                    caption=new_cap,
-                    parse_mode=enums.ParseMode.HTML
-                )
+                media_id = message.document.file_id
+                await message.reply_document(media_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
 
 @bot.on_message(filters.command("start"))
-async def start(_, msg: Message):
+async def start_cmd(_, msg: Message):
     await msg.reply(
         "📚 <b>Caption Formatter Bot</b>\n\n"
-        "Send media with captions formatted as:\n"
-        "<code>Title // Class // Optional extra</code>\n\n"
+        "Send media with captions using `Title // Class // Optional extra`.\n"
         "• Title → numbered blockquote\n"
-        "• Class → same numbering blockquote\n"
-        "• Extra → appended as-is\n"
-        "• Other captions: strips up to first #, cuts at ᒪᑭᖇᑭᗪᐯ",
+        "• Class → same numbering blockquote (text after literal 'Class')\n"
+        "• Extra → appended as plain text\n"
+        "• Other captions: strips up to first number, cuts at ᒪᑭᖇᑭᗪᐯ",
         parse_mode=enums.ParseMode.HTML
     )
 
 @bot.on_message(filters.command(["reset", "set"]))
 async def set_number(_, msg: Message):
     global current_number
-    async with _lock:
+    async with _number_lock:
         cmd, *rest = msg.command
         if cmd == "reset":
             current_number = 1
