@@ -26,20 +26,18 @@ def convert_to_math_sans(text):
     return ''.join(sans_map.get(c, c) for c in text)
 
 def process_content(original):
-    marker = "— ᴹᴿ°𝐀ѕρ𝒾𝚛åηƚ𝓈࿐"
+    marker = "ᒪᑭᖇᑭᗪᐯ"
+    content_part = original.split(marker, 1)[0].strip()
     
-    # 1. Remove everything after the marker
-    content_part = original.split(marker, 1)[0]
+    reas_pos = content_part.find("Reas")
+    if reas_pos != -1:
+        return content_part[reas_pos+4:].strip()
     
-    # 2. Split by colons and keep after 2nd colon
-    parts = content_part.split(':')
-    if len(parts) >= 3:
-        processed_text = ':'.join(parts[2:]).strip()
-    else:
-        processed_text = content_part.strip()
+    numbers = list(re.finditer(r'\d+', content_part))
+    if len(numbers) >= 2:
+        return content_part[numbers[1].end():].strip()
     
-    # 3. Return cleaned text WITH NUMBERS INTACT
-    return processed_text
+    return content_part.strip()
 
 @health_app.route('/')
 def health_check():
