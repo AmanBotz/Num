@@ -29,7 +29,7 @@ def process_content(original):
     marker = "ᒪᑭᖇᑭᗪᐯ"
     content_part = original.split(marker, 1)[0].strip()
     
-    reas_pos = content_part.find("Reas")
+    reas_pos = content_part.find("Reas ")
     if reas_pos != -1:
         return content_part[reas_pos+4:].strip()
     
