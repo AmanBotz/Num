@@ -26,7 +26,7 @@ def convert_to_math_sans(text):
     return ''.join(sans_map.get(c, c) for c in text)
 
 def process_content(original):
-    marker = 'ᒪᑭᖇᑭᗪᐯ'
+    marker = '— ᴹᴿ°𝐀ѕρ𝒾𝚛åηƚ𝓈࿐'
     content_part = original.split(marker, 1)[0]
     
     numbers = list(re.finditer(r'\d+', content_part))
