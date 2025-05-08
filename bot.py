@@ -95,6 +95,7 @@ def remove_unwanted_sentences(text: str) -> str:
         "Batch » Maths Spl-30 (Pre+Mains)",
         "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
         "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
+        "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓🌙࿐⁰³",
         "»Download By➵ᴹᴿ°ꜱᴀᴄʜ𝖎𝖓🌙࿐⁰³",
         "»Download By➵ᴹᴿ°sachin🌙࿐⁰³",
         "By » Gagan Pratap Sir (Careerwill)",
