@@ -1,295 +1,237 @@
 import os
 import asyncio
-import shutil
-import time
-import threading
-import uuid
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.enums import ParseMode
-import yt_dlp
-import ffmpeg
+import re
+from threading import Thread
+from pyrogram import Client, filters, enums
+from pyrogram.types import Message
+from flask import Flask
 
-# Global asynchronous lock for download/disk operations.
-download_lock = asyncio.Lock()
-# Dictionary to store last progress update timestamp per message id.
-progress_last_update = {}
-# Dictionary to store user-specific cookies file paths.
-user_cookies = {}
-# Dictionary to map unique tokens to download request details.
-download_requests = {}
+# ------------------------------------------------------------------------------
+# Load configuration from environment variables
+# ------------------------------------------------------------------------------
+API_ID = int(os.getenv("API_ID", "0"))
+API_HASH = os.getenv("API_HASH", "")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# Provided API credentials (API_ID as integer)
-API_ID = 23288918
-API_HASH = "fd2b1b2e0e6b2addf6e8031f15e511f2"
-# Set your bot token here or via environment variable.
-BOT_TOKEN = os.getenv("BOT_TOKEN") or "YOUR_BOT_TOKEN_HERE"
+if not API_ID or not API_HASH or not BOT_TOKEN:
+    raise ValueError("❌ API_ID, API_HASH, or BOT_TOKEN is missing! Set them in your environment variables.")
 
-# Owner's Telegram ID (as integer) and default cookies file path.
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-DEFAULT_COOKIE_FILE = os.getenv("DEFAULT_COOKIE")  # e.g., "cookies/owner_cookies.txt"
+# ------------------------------------------------------------------------------
+# Initialize the Pyrogram bot client
+# ------------------------------------------------------------------------------
+bot = Client("file_bot", bot_token=BOT_TOKEN, api_id=API_ID, api_hash=API_HASH)
 
-app = Client("yt_dlp_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ------------------------------------------------------------------------------
+# Initialize Flask for the health check endpoint
+# ------------------------------------------------------------------------------
+health_app = Flask(__name__)
 
-# ---------------------------
-# Health Check Server
-# ---------------------------
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
+@health_app.route('/health')
+def health_check():
+    return "OK", 200
 
-def run_health_server():
-    server_address = ("0.0.0.0", 8000)
-    httpd = HTTPServer(server_address, HealthHandler)
-    httpd.serve_forever()
+def run_flask():
+    health_app.run(port=8000, host="0.0.0.0")
 
-# ---------------------------
-# Utility Functions
-# ---------------------------
-def check_disk_space(required_bytes):
-    """Return True if free disk space is at least required_bytes."""
-    total, used, free = shutil.disk_usage("/")
-    return free >= required_bytes
+flask_thread = Thread(target=run_flask)
+flask_thread.daemon = True
+flask_thread.start()
 
-def to_small_caps(text):
-    """Convert letters to small caps using Unicode equivalents."""
-    small_caps_map = {
-        'a': 'ᴀ', 'b': 'ʙ', 'c': 'ᴄ', 'd': 'ᴅ', 'e': 'ᴇ',
-        'f': 'ꜰ', 'g': 'ɢ', 'h': 'ʜ', 'i': 'ɪ', 'j': 'ᴊ',
-        'k': 'ᴋ', 'l': 'ʟ', 'm': 'ᴍ', 'n': 'ɴ', 'o': 'ᴏ',
-        'p': 'ᴘ', 'q': 'ǫ', 'r': 'ʀ', 's': 's', 't': 'ᴛ',
-        'u': 'ᴜ', 'v': 'v', 'w': 'ᴡ', 'x': 'x', 'y': 'ʏ', 'z': 'ᴢ'
-    }
-    return "".join(small_caps_map.get(ch.lower(), ch) for ch in text)
+# ------------------------------------------------------------------------------
+# Persistent numbering state
+# ------------------------------------------------------------------------------
+NUMBERING_FILE = "numbering_state.txt"
 
-def progress_callback(current, total, message, action="Downloading"):
-    """Update progress message with an emoji progress bar, limited to one update every 10 seconds."""
-    now = time.time()
-    msg_id = message.message_id
-    if msg_id not in progress_last_update or (now - progress_last_update[msg_id]) > 10:
-        progress_last_update[msg_id] = now
-        percent = (current / total) * 100 if total else 0
-        bar = "🔵" * int(percent // 10) + "⚪" * (10 - int(percent // 10))
-        asyncio.create_task(message.edit_text(f"{action}... {bar} {percent:.2f}%", parse_mode=ParseMode.HTML))
-
-def get_formats(url, cookie_file=None):
-    """Extract available formats using yt-dlp, optionally using a cookies file."""
-    ydl_opts = {
-        'skip_download': True,
-        'quiet': True,
-        'no_warnings': True,
-    }
-    if cookie_file:
-        ydl_opts['cookiefile'] = cookie_file
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-    except Exception as e:
-        return None, str(e)
-    formats = info.get("formats", [])
-    available = []
-    for fmt in formats:
-        format_id = fmt.get("format_id")
-        ext = fmt.get("ext")
-        resolution = fmt.get("resolution") or (f"{fmt.get('height', 'NA')}p" if fmt.get("height") else "audio")
-        filesize = fmt.get("filesize") or fmt.get("filesize_approx") or 0
-        filesize_mb = round(filesize / (1024 * 1024), 2) if filesize else "Unknown"
-        available.append({
-            "format_id": format_id,
-            "ext": ext,
-            "resolution": resolution,
-            "filesize": filesize,
-            "filesize_mb": filesize_mb
-        })
-    title = info.get("title", "Unknown Title")
-    return {"formats": available, "title": title, "info": info}, None
-
-# ---------------------------
-# Bot Command Handlers
-# ---------------------------
-@app.on_message(filters.command("start"))
-async def start(client, message):
-    await message.reply_text(
-        "Welcome to the yt-dlp Bot 🤖!<br>"
-        "Use <b>/dl &lt;URL&gt;</b> to download a video from any supported site.<br>"
-        "You can set your own cookies with <b>/setcookies</b> if needed; otherwise, the default cookies will be used.",
-        parse_mode=ParseMode.HTML
-    )
-
-@app.on_message(filters.command("setcookies"))
-async def set_cookies(client, message):
-    user_id = message.from_user.id
-    if len(message.command) > 1:
-        # Use the text after the command as cookie content.
-        cookie_text = message.text.split(None, 1)[1]
-        if not os.path.exists("cookies"):
-            os.makedirs("cookies")
-        cookie_file = f"cookies/cookies_{user_id}.txt"
-        with open(cookie_file, "w", encoding="utf-8") as f:
-            f.write(cookie_text)
-        user_cookies[user_id] = cookie_file
-        await message.reply_text("Your cookies have been set.", parse_mode=ParseMode.HTML)
-    elif message.document:
-        if not os.path.exists("cookies"):
-            os.makedirs("cookies")
-        file_path = await message.download(file_name=f"cookies/cookies_{user_id}.txt")
-        user_cookies[user_id] = file_path
-        await message.reply_text("Your cookies file has been set.", parse_mode=ParseMode.HTML)
-    else:
-        await message.reply_text("Usage: /setcookies <cookie content> or send a cookie file.", parse_mode=ParseMode.HTML)
-
-@app.on_message(filters.command("dl"))
-async def dl_command(client, message):
-    parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await message.reply_text("Usage: /dl <URL>", parse_mode=ParseMode.HTML)
-        return
-    url = parts[1].strip()
-    if not (url.startswith("http://") or url.startswith("https://")):
-        await message.reply_text("Please provide a valid URL.", parse_mode=ParseMode.HTML)
-        return
-
-    async with download_lock:
-        if not check_disk_space(100 * 1024 * 1024):  # Require at least 100 MB free
-            await message.reply_text("System busy with downloads. Please wait a moment ⏳.", parse_mode=ParseMode.HTML)
-            return
-
-    # Determine cookie file: use user-specific if set, else default.
-    cookie_file = user_cookies.get(message.from_user.id, DEFAULT_COOKIE_FILE)
-    result, error = get_formats(url, cookie_file=cookie_file)
-    if error:
-        if "login" in error.lower() or "authorization" in error.lower():
-            await message.reply_text(
-                "This URL requires login/authorization. Please set your cookies with /setcookies or provide a valid URL.",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await message.reply_text(f"Error: {error}", parse_mode=ParseMode.HTML)
-        return
-
-    formats = result["formats"]
-    title = result["title"]
-
-    # Limit to first 10 formats to keep callback data small.
-    if len(formats) > 10:
-        formats = formats[:10]
-
-    # Build inline buttons for each format using a unique token.
-    buttons = []
-    for fmt in formats:
-        token = uuid.uuid4().hex
-        download_requests[token] = {
-            "format_id": fmt["format_id"],
-            "url": url,
-            "cookie_file": cookie_file
-        }
-        label = f"{fmt['ext']} | {fmt['resolution']} | {fmt['filesize_mb']}MB"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"dl|{token}")])
-    reply_markup = InlineKeyboardMarkup(buttons)
-    await message.reply_text(f"Select format for <b>{title}</b>:",
-                             reply_markup=reply_markup,
-                             parse_mode=ParseMode.HTML)
-
-@app.on_callback_query(filters.regex(r"^dl\|"))
-async def download_format(client, callback_query):
-    data = callback_query.data.split("|")
-    if len(data) < 2:
-        await callback_query.answer("Invalid selection.")
-        return
-    token = data[1]
-    req = download_requests.pop(token, None)
-    if not req:
-        await callback_query.answer("Request expired or invalid.")
-        return
-
-    format_id = req["format_id"]
-    url = req["url"]
-    cookie_file = req["cookie_file"]
-
-    await callback_query.answer("Download started.")
-    progress_message = await callback_query.message.reply_text("Starting download... ⏳", parse_mode=ParseMode.HTML)
-
-    async with download_lock:
-        out_template = "downloads/%(id)s.%(ext)s"
-        ydl_opts = {
-            "format": format_id,
-            "outtmpl": out_template,
-            "progress_hooks": [lambda d: progress_callback(d.get("downloaded_bytes", 0),
-                                                             d.get("total_bytes", 1),
-                                                             progress_message,
-                                                             action="Downloading")],
-            "quiet": True,
-            "no_warnings": True,
-        }
-        if cookie_file:
-            ydl_opts["cookiefile"] = cookie_file
+def load_number():
+    if os.path.exists(NUMBERING_FILE):
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-        except Exception as e:
-            await progress_message.edit_text(f"Error during download: {str(e)}", parse_mode=ParseMode.HTML)
-            return
-
-    file_path = yt_dlp.YoutubeDL(ydl_opts).prepare_filename(info)
-    try:
-        probe = ffmpeg.probe(file_path)
-        duration = float(probe["format"]["duration"])
-        thumbnail_path = f"{file_path}.jpg"
-        (
-            ffmpeg
-            .input(file_path, ss=duration/2)
-            .filter("scale", 320, -1)
-            .output(thumbnail_path, vframes=1)
-            .run(quiet=True, overwrite_output=True)
-        )
-    except Exception as e:
-        await progress_message.edit_text(f"Error processing media: {str(e)}", parse_mode=ParseMode.HTML)
-        return
-
-    filesize_bytes = info.get("filesize") or info.get("filesize_approx") or 0
-    filesize_mb = f"{round(filesize_bytes / (1024*1024), 2)}MB" if filesize_bytes else "Unknown"
-    resolution = info.get("resolution") or (f"{info.get('height', 'NA')}p" if info.get("height") else "audio")
-    caption = f"{info.get('title', 'No Title')}\n"
-    blockquote = f"> {to_small_caps('size')}: {filesize_mb} | {to_small_caps('quality')}: {resolution}"
-    caption += blockquote
-
-    await progress_message.edit_text("Uploading... ⏳", parse_mode=ParseMode.HTML)
-    try:
-        if info.get("ext") in ["mp3", "m4a", "webm"]:
-            await client.send_audio(
-                chat_id=callback_query.message.chat.id,
-                audio=file_path,
-                thumb=thumbnail_path,
-                caption=caption,
-                progress=lambda current, total: progress_callback(current, total, progress_message, action="Uploading")
-            )
-        else:
-            await client.send_video(
-                chat_id=callback_query.message.chat.id,
-                video=file_path,
-                thumb=thumbnail_path,
-                caption=caption,
-                progress=lambda current, total: progress_callback(current, total, progress_message, action="Uploading")
-            )
-        await progress_message.delete()
-    except Exception as e:
-        await progress_message.edit_text(f"Error during upload: {str(e)}", parse_mode=ParseMode.HTML)
-    finally:
-        try:
-            os.remove(file_path)
-            os.remove(thumbnail_path)
+            with open(NUMBERING_FILE, "r") as f:
+                return int(f.read().strip())
         except Exception:
-            pass
+            return 1
+    return 1
 
-if __name__ == "__main__":
-    if not os.path.exists("downloads"):
-        os.makedirs("downloads")
-    if not os.path.exists("cookies"):
-        os.makedirs("cookies")
-    # Start health check server in a separate thread (for Koyeb's TCP health check on port 8000).
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
-    app.run()
+def save_number(number):
+    with open(NUMBERING_FILE, "w") as f:
+        f.write(str(number))
+
+current_number = load_number()
+number_lock = asyncio.Lock()
+
+# ------------------------------------------------------------------------------
+# Convert text to Mathematical Sans‑Serif Plain (non bold, non italic)
+# ------------------------------------------------------------------------------
+def to_math_sans_plain(text: str) -> str:
+    result = []
+    for ch in text:
+        if 'A' <= ch <= 'Z':
+            result.append(chr(ord(ch) - ord('A') + 0x1D5A0))
+        elif 'a' <= ch <= 'z':
+            result.append(chr(ord(ch) - ord('a') + 0x1D5BA))
+        elif '0' <= ch <= '9':
+            result.append(chr(ord(ch) - ord('0') + 0x1D7E2))
+        else:
+            result.append(ch)
+    return ''.join(result)
+
+# ------------------------------------------------------------------------------
+# Format numbering (e.g., state 33 becomes "033" converted to Unicode)
+# ------------------------------------------------------------------------------
+def format_number(num: int) -> str:
+    num_str = str(num).zfill(3)
+    return to_math_sans_plain(num_str)
+
+# ------------------------------------------------------------------------------
+# Wrap text in an HTML blockquote
+# ------------------------------------------------------------------------------
+def blockquote(text: str) -> str:
+    return f"<blockquote>{text}</blockquote>"
+
+# ------------------------------------------------------------------------------
+# Remove unwanted phrases and markers from the caption
+# ------------------------------------------------------------------------------
+def remove_unwanted_sentences(text: str) -> str:
+    unwanted_phrases = [
+        "Batch » Maths Spl-30 (Pre+Mains)",
+        "»Download By➵➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
+        "»Download By➵ᴹᴿ°ຮ𝖆𝖈𝖍𝖎𝖓࿐²⁴⁷",
+        "»Download By➵ᴹᴿ°ꜱᴀᴄʜ𝖎𝖓🌙࿐⁰³",
+        "»Download By➵ᴹᴿ°sachin🌙࿐⁰³",
+        "By » Gagan Pratap Sir (Careerwill)",
+        "By » Gagan Pratap Sir",
+        "•"
+    ]
+    for phrase in unwanted_phrases:
+        text = text.replace(phrase, "")
+    # Remove any leading numbering pattern like "033)." at the start of a line
+    text = re.sub(r'^\s*\d+\)\.?\s*', '', text, flags=re.MULTILINE)
+    # Remove numeric markers like "001)." anywhere in the text
+    text = re.sub(r'\b(?:0\d{2}|[1-2]\d{2}|300)\)\.', '', text)
+    return text.strip()
+
+# ------------------------------------------------------------------------------
+# Clean prefix: remove any leading numbering from the prefix text.
+# ------------------------------------------------------------------------------
+def clean_prefix(prefix: str) -> str:
+    return re.sub(r'^\s*\d+\)\.?\s*', '', prefix).strip()
+
+# ------------------------------------------------------------------------------
+# Process caption:
+#   - If "Class Date »" is found: split into prefix (before) and suffix (from "Class Date »" onward).
+#     * Remove the marker "Class Date »" from the caption.
+#     * Also remove "31 October 2024" from the suffix if present.
+#     * Force suffix to one line.
+#     * Convert suffix to Mathematical Sans‑Serif Plain.
+#     * Prepend numbering (in square brackets) to suffix and wrap in blockquote.
+#     * Append the cleaned prefix (unchanged) below.
+#   - If "Class Date »" is not found: blockquote only the numbering and then append
+#     the rest of the cleaned caption unchanged.
+# ------------------------------------------------------------------------------
+def process_caption(text: str, numbering: str) -> str:
+    cleaned_text = remove_unwanted_sentences(text)
+    lower_text = cleaned_text.lower()
+    marker = "class date »"  # marker to detect (case-insensitive)
+    idx = lower_text.find(marker)
+    if idx != -1:
+        prefix = cleaned_text[:idx].strip()
+        suffix = cleaned_text[idx + len(marker):].strip()
+        # Remove the date "31 October 2024" if present in the suffix
+        suffix = suffix.replace("31 October 2024", "").strip()
+        suffix_one_line = ' '.join(suffix.split())
+        converted_suffix = to_math_sans_plain(suffix_one_line)
+        block_text = f"[{numbering}] {converted_suffix}"
+        blockquoted = blockquote(block_text)
+        clean_pref = clean_prefix(prefix)
+        return f"{blockquoted}\n{clean_pref}"
+    else:
+        blockquoted = blockquote(f"[{numbering}]")
+        return f"{blockquoted}\n{cleaned_text}"
+
+# ------------------------------------------------------------------------------
+# Handler for media messages:
+#   - Process caption for video files only.
+#   - For PDF files, remove the caption entirely.
+#   - Other file types remain unchanged.
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.media)
+async def handle_media(client, message: Message):
+    global current_number
+
+    if message.video:
+        async with number_lock:
+            num = current_number
+            current_number += 1
+            save_number(current_number)
+        orig_caption = message.caption or ""
+        numbering = format_number(num)
+        new_caption = process_caption(orig_caption, numbering)
+        try:
+            await message.edit_caption(new_caption, parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            print(f"Error editing caption: {e}")
+            await message.reply_video(message.video.file_id, caption=new_caption, parse_mode=enums.ParseMode.HTML)
+    elif message.document and message.document.mime_type == "application/pdf":
+        try:
+            await message.edit_caption("", parse_mode=enums.ParseMode.HTML)
+        except Exception as e:
+            print(f"Error editing caption for PDF: {e}")
+            await message.reply_document(message.document.file_id, caption="", parse_mode=enums.ParseMode.HTML)
+    else:
+        # For other file types, leave the caption unchanged.
+        pass
+
+# ------------------------------------------------------------------------------
+# /start command: provides instructions to the user
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("start"))
+async def start(client, message: Message):
+    instructions = (
+        "<b>Welcome!</b>\n"
+        "This bot automatically numbers video file captions and processes text starting from the keyword \"Class Date »\". "
+        "If the caption contains \"Class Date »\", the text from that point is forced onto one line, converted into non‑bold, non‑italic Mathematical Sans‑Serif Plain style, and prepended with a numbering prefix (in square brackets) wrapped in a blockquote. "
+        "Any text before \"Class Date »\" is appended below the blockquote. "
+        "Additionally, if the text \"31 October 2024\" appears after the marker, it will be removed. "
+        "If \"Class Date »\" is not found, only the numbering is blockquoted and converted, while the rest of the caption remains unchanged. "
+        "For PDF files, the caption is removed entirely.\n\n"
+        "<b>Commands:</b>\n"
+        "• <code>/reset</code> - Reset numbering to " + format_number(1) + "\n"
+        "• <code>/set &lt;number&gt;</code> - Set numbering starting from a custom number (e.g. <code>/set 051</code>)\n"
+        "• Send a video file with a caption containing \"Class Date »\" to see the processing in action."
+    )
+    await message.reply(instructions, parse_mode=enums.ParseMode.HTML)
+
+# ------------------------------------------------------------------------------
+# /reset command: resets numbering to 1
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("reset"))
+async def reset(client, message: Message):
+    global current_number
+    async with number_lock:
+        current_number = 1
+        save_number(current_number)
+    await message.reply("✅ Numbering has been reset to " + format_number(current_number), parse_mode=enums.ParseMode.HTML)
+
+# ------------------------------------------------------------------------------
+# /set command: sets numbering to a custom value
+# ------------------------------------------------------------------------------
+@bot.on_message(filters.command("set"))
+async def set_number(client, message: Message):
+    global current_number
+    try:
+        parts = message.text.split()
+        if len(parts) < 2:
+            raise ValueError
+        new_number = int(parts[1])
+        if new_number < 1:
+            raise ValueError
+        async with number_lock:
+            current_number = new_number
+            save_number(current_number)
+        await message.reply("✅ Numbering set to " + format_number(current_number), parse_mode=enums.ParseMode.HTML)
+    except Exception:
+        await message.reply("❌ <b>Usage:</b> <code>/set &lt;number&gt;</code>\nExample: <code>/set 051</code>", parse_mode=enums.ParseMode.HTML)
+
+# ------------------------------------------------------------------------------
+# Start the bot
+# ------------------------------------------------------------------------------
+bot.run()
