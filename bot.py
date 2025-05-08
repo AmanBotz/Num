@@ -100,6 +100,7 @@ def remove_unwanted_sentences(text: str) -> str:
         "»Download By➵ᴹᴿ°𝐒𝐀𝐂𝐇𝐈𝐍🌙࿐⁰³",
         "»Download By➵ᴹᴿ°ꜱᴀᴄʜ𝖎𝖓🌙࿐⁰³",
         "»Download By➵ᴹᴿ°sachin🌙࿐⁰³",
+        "Class By » Gagan Pratap Sir",
         "By » Gagan Pratap Sir (Careerwill)",
         "By » Gagan Pratap Sir",
         "•"
