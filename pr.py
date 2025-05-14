@@ -85,26 +85,41 @@ def blockquote(text: str) -> str:
     return f"<blockquote>{text}</blockquote>"
 
 # ----------------------------------------------------------------------------
-# New caption processing: blockquote only numbering [NNN],
-# then extract text from 2nd ':' (excluding 2nd ':') to include '.mkv'
-# Additionally remove "VIDEO" and any [bracketed] text except [NNN]
+# New caption processing:
+# - Blockquote only numbering [NNN]
+# - Extract text after the 2nd ':' up to '.mkv'
+# - Cleanup: remove 'VIDEO', all other bracketed text, the '.mkv' extension,
+#   leading colons, stray dashes, and collapse whitespace.
 # ----------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
+    # 1. Blockquote numbering
     quote = blockquote(f"[{numbering}]")
 
+    # 2. Extract snippet between after 2nd colon to .mkv
+    snippet = text
     try:
-        colon_positions = [m.start() for m in re.finditer(r":", text)]
-        start_idx = colon_positions[1] + 1 if len(colon_positions) >= 2 else 0
-        lower = text.lower()
-        end_pos = lower.find('.mkv')
-        end_idx = end_pos + len('.mkv') if end_pos != -1 else len(text)
-        snippet = text[start_idx:end_idx].strip()
+        cols = [m.start() for m in re.finditer(r":", text)]
+        start = cols[1] + 1 if len(cols) >= 2 else 0
+        end_mkv = text.lower().find('.mkv')
+        end = end_mkv if end_mkv != -1 else len(text)
+        snippet = text[start:end]
     except Exception:
         snippet = text
 
-    # Remove the word "VIDEO" and any words inside brackets [] excluding [NNN]
+    # 3. Remove 'VIDEO' keyword (case-insensitive)
     snippet = re.sub(r"\bVIDEO\b", "", snippet, flags=re.IGNORECASE)
-    snippet = re.sub(r"\[[^\[\]\d]{1,}\]", "", snippet).strip()
+
+    # 4. Remove bracketed content [ ... ]
+    snippet = re.sub(r"\[[^\]]*\]", "", snippet)
+
+    # 5. Remove leading colons and whitespace
+    snippet = re.sub(r"^[:]+", "", snippet).strip()
+
+    # 6. Remove stray dashes (e.g. leftover separators)
+    snippet = re.sub(r"\s*-+\s*", " ", snippet)
+
+    # 7. Collapse multiple spaces
+    snippet = ' '.join(snippet.split())
 
     return f"{quote}\n{snippet}"
 
