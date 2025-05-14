@@ -30,7 +30,6 @@ health_app = Flask(__name__)
 def health_check():
     return "OK", 200
 
-
 def run_flask():
     health_app.run(port=8000, host="0.0.0.0")
 
@@ -87,29 +86,26 @@ def blockquote(text: str) -> str:
 
 # ----------------------------------------------------------------------------
 # New caption processing: blockquote only numbering [NNN],
-# then extract text from second ':' up to '.mkv'
+# then extract text from 2nd ':' (excluding 2nd ':') to include '.mkv'
+# Additionally remove "VIDEO" and any [bracketed] text except [NNN]
 # ----------------------------------------------------------------------------
 def process_caption(text: str, numbering: str) -> str:
-    # Build blockquote for numbering only
     quote = blockquote(f"[{numbering}]")
-    
-    # Attempt to extract substring from 2nd ':' to '.mkv'
+
     try:
-        # find positions of ':'
         colon_positions = [m.start() for m in re.finditer(r":", text)]
-        if len(colon_positions) >= 2:
-            start_idx = colon_positions[1] + 1  # after second colon
-        else:
-            # fallback to start of text
-            start_idx = 0
-        end_idx = text.lower().rfind('.mkv')
-        if end_idx == -1:
-            end_idx = len(text)
+        start_idx = colon_positions[1] + 1 if len(colon_positions) >= 2 else 0
+        lower = text.lower()
+        end_pos = lower.find('.mkv')
+        end_idx = end_pos + len('.mkv') if end_pos != -1 else len(text)
         snippet = text[start_idx:end_idx].strip()
     except Exception:
         snippet = text
-    
-    # Combine
+
+    # Remove the word "VIDEO" and any words inside brackets [] excluding [NNN]
+    snippet = re.sub(r"\bVIDEO\b", "", snippet, flags=re.IGNORECASE)
+    snippet = re.sub(r"\[[^\[\]\d]{1,}\]", "", snippet).strip()
+
     return f"{quote}\n{snippet}"
 
 # ----------------------------------------------------------------------------
